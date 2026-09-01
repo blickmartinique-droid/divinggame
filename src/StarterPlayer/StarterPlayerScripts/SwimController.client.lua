@@ -3,7 +3,7 @@
 -- to set while grounded, so instead of fighting that, PlatformStand fully
 -- disables the built-in controller and this script drives 100% of the
 -- character's motion: horizontal (camera-relative WASD/ZQSD), vertical
--- (Space/LeftControl/C), and facing direction.
+-- (Space/LeftControl/C), facing direction, and swim animations.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -53,11 +53,57 @@ local function flattenAndNormalize(vector)
 	return flat
 end
 
+-- Reuses the swim animations Roblox already ships on every default avatar
+-- (normally auto-played by the built-in Animate script when touching Terrain
+-- water). PlatformStand disables that script's control, so it's disabled
+-- here and its animations are played manually instead.
+local function loadSwimAnimations(character, humanoid)
+	local animateScript = character:FindFirstChild("Animate")
+	if not animateScript then
+		return nil
+	end
+	animateScript.Disabled = true
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
+
+	local moveAnim, idleAnim
+	for _, descendant in ipairs(animateScript:GetDescendants()) do
+		if descendant:IsA("Animation") then
+			local lowerName = descendant.Name:lower()
+			if lowerName:find("swim") then
+				if lowerName:find("idle") then
+					idleAnim = idleAnim or descendant
+				else
+					moveAnim = moveAnim or descendant
+				end
+			end
+		end
+	end
+
+	local tracks = {}
+	if moveAnim then
+		tracks.move = animator:LoadAnimation(moveAnim)
+		tracks.move.Looped = true
+	end
+	if idleAnim then
+		tracks.idle = animator:LoadAnimation(idleAnim)
+		tracks.idle.Looped = true
+	end
+	return tracks
+end
+
 local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	local rootPart = character:WaitForChild("HumanoidRootPart")
 
 	humanoid.PlatformStand = true
+
+	local animationTracks = loadSwimAnimations(character, humanoid)
+	local isMoving = false
 
 	local heartbeatConnection
 	heartbeatConnection = RunService.Heartbeat:Connect(function()
@@ -99,6 +145,26 @@ local function onCharacterAdded(character)
 
 		if moveDirection.Magnitude > 0 then
 			rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + moveDirection)
+		end
+
+		local nowMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
+		if animationTracks and nowMoving ~= isMoving then
+			isMoving = nowMoving
+			if isMoving then
+				if animationTracks.idle then
+					animationTracks.idle:Stop()
+				end
+				if animationTracks.move then
+					animationTracks.move:Play()
+				end
+			else
+				if animationTracks.move then
+					animationTracks.move:Stop()
+				end
+				if animationTracks.idle then
+					animationTracks.idle:Play()
+				end
+			end
 		end
 	end)
 end
