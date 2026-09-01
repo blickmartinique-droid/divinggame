@@ -18,6 +18,9 @@
       "$className": "ServerScriptService",
       "World": {
         "$path": "src/ServerScriptService/World"
+      },
+      "Player": {
+        "$path": "src/ServerScriptService/Player"
       }
     }
   }
