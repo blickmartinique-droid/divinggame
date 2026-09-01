@@ -1,26 +1,27 @@
--- Gives the character free-swim movement: WASD moves horizontally (camera-relative,
--- handled by Roblox's default controls), Space ascends, LeftControl/C descends.
--- The character neither falls nor needs to jump: vertical velocity is fully driven
--- by player input, which reads as neutral buoyancy for a diving game.
--- Humanoid is forced into the Swimming state every frame: while grounded, Roblox's
--- built-in ground-follow logic otherwise overrides/cancels any vertical velocity we set.
+-- Free-swim movement controller. Roblox's default Humanoid movement actively
+-- snaps the character to the ground and cancels any vertical velocity we try
+-- to set while grounded, so instead of fighting that, PlatformStand fully
+-- disables the built-in controller and this script drives 100% of the
+-- character's motion: horizontal (camera-relative WASD/ZQSD), vertical
+-- (Space/LeftControl/C), and facing direction.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local MovementConfig = require(ReplicatedStorage.Shared.Config.MovementConfig)
 
 local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
 
-local ASCEND_KEYS = {
-	[Enum.KeyCode.Space] = true,
-}
-local DESCEND_KEYS = {
-	[Enum.KeyCode.LeftControl] = true,
-	[Enum.KeyCode.C] = true,
-}
+local FORWARD_KEYS = { [Enum.KeyCode.W] = true, [Enum.KeyCode.Up] = true }
+local BACK_KEYS = { [Enum.KeyCode.S] = true, [Enum.KeyCode.Down] = true }
+local LEFT_KEYS = { [Enum.KeyCode.A] = true, [Enum.KeyCode.Left] = true }
+local RIGHT_KEYS = { [Enum.KeyCode.D] = true, [Enum.KeyCode.Right] = true }
+local ASCEND_KEYS = { [Enum.KeyCode.Space] = true }
+local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = true }
 
 local heldKeys = {}
 
@@ -44,14 +45,19 @@ local function isAnyKeyHeld(keySet)
 	return false
 end
 
+local function flattenAndNormalize(vector)
+	local flat = Vector3.new(vector.X, 0, vector.Z)
+	if flat.Magnitude > 0 then
+		return flat.Unit
+	end
+	return flat
+end
+
 local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	local rootPart = character:WaitForChild("HumanoidRootPart")
 
-	humanoid.WalkSpeed = MovementConfig.BaseSwimSpeed
-	humanoid.JumpPower = 0
-	humanoid.JumpHeight = 0
-	humanoid.AutoJumpEnabled = false
+	humanoid.PlatformStand = true
 
 	local heartbeatConnection
 	heartbeatConnection = RunService.Heartbeat:Connect(function()
@@ -60,8 +66,24 @@ local function onCharacterAdded(character)
 			return
 		end
 
-		if humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
-			humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+		local flatLook = flattenAndNormalize(camera.CFrame.LookVector)
+		local flatRight = flattenAndNormalize(camera.CFrame.RightVector)
+
+		local moveDirection = Vector3.new()
+		if isAnyKeyHeld(FORWARD_KEYS) then
+			moveDirection += flatLook
+		end
+		if isAnyKeyHeld(BACK_KEYS) then
+			moveDirection -= flatLook
+		end
+		if isAnyKeyHeld(RIGHT_KEYS) then
+			moveDirection += flatRight
+		end
+		if isAnyKeyHeld(LEFT_KEYS) then
+			moveDirection -= flatRight
+		end
+		if moveDirection.Magnitude > 0 then
+			moveDirection = moveDirection.Unit
 		end
 
 		local verticalSpeed = 0
@@ -72,8 +94,12 @@ local function onCharacterAdded(character)
 			verticalSpeed -= MovementConfig.VerticalSwimSpeed
 		end
 
-		local currentVelocity = rootPart.AssemblyLinearVelocity
-		rootPart.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, verticalSpeed, currentVelocity.Z)
+		local horizontalVelocity = moveDirection * MovementConfig.BaseSwimSpeed
+		rootPart.AssemblyLinearVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
+
+		if moveDirection.Magnitude > 0 then
+			rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + moveDirection)
+		end
 	end)
 end
 
