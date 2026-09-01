@@ -141,10 +141,11 @@ local function onCharacterAdded(character)
 		end
 
 		local horizontalVelocity = moveDirection * MovementConfig.BaseSwimSpeed
-		rootPart.AssemblyLinearVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
+		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
+		rootPart.AssemblyLinearVelocity = fullVelocity
 
-		if moveDirection.Magnitude > 0 then
-			rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + moveDirection)
+		if fullVelocity.Magnitude > 0.01 then
+			rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
 		end
 
 		local nowMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0

@@ -50,3 +50,12 @@ fillChunked(oceanMin, oceanSize, Enum.Material.Water)
 local floorMin = Vector3.new(-OCEAN_WIDTH / 2, SURFACE_Y - maxDepth - FLOOR_THICKNESS, -OCEAN_WIDTH / 2)
 local floorSize = Vector3.new(OCEAN_WIDTH, FLOOR_THICKNESS, OCEAN_WIDTH)
 fillChunked(floorMin, floorSize, Enum.Material.Rock)
+
+-- Visual tuning: default Terrain water looks flat and murky. A deeper,
+-- more saturated color with some waves and reflectance reads as an ocean
+-- rather than a puddle.
+terrain.WaterColor = Color3.fromRGB(11, 83, 108)
+terrain.WaterTransparency = 0.3
+terrain.WaterReflectance = 0.15
+terrain.WaterWaveSize = 0.15
+terrain.WaterWaveSpeed = 8
