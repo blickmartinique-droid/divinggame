@@ -2,6 +2,8 @@
 -- handled by Roblox's default controls), Space ascends, LeftControl/C descends.
 -- The character neither falls nor needs to jump: vertical velocity is fully driven
 -- by player input, which reads as neutral buoyancy for a diving game.
+-- Humanoid is forced into the Swimming state every frame: while grounded, Roblox's
+-- built-in ground-follow logic otherwise overrides/cancels any vertical velocity we set.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -56,6 +58,10 @@ local function onCharacterAdded(character)
 		if humanoid.Health <= 0 or not character.Parent then
 			heartbeatConnection:Disconnect()
 			return
+		end
+
+		if humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+			humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
 		end
 
 		local verticalSpeed = 0
