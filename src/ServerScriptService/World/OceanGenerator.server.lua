@@ -2,6 +2,9 @@
 -- water block from the surface down to -MaxDepth, plus a seafloor beneath it.
 -- Regenerating on every start is cheap enough for a prototype and keeps the
 -- world fully defined by code rather than hand-placed Studio state.
+--
+-- Terrain:FillBlock errors ("Extents are too large") on very large single
+-- calls, so each volume is filled in smaller chunks instead of one call.
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,14 +14,39 @@ local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 local OCEAN_WIDTH = 1000 -- studs, horizontal extent (X and Z)
 local SURFACE_Y = 0
 local FLOOR_THICKNESS = 20
+local CHUNK_SIZE = 200
 
 local maxDepth = ZonesConfig.MaxDepth
 local terrain = Workspace.Terrain
 
-local oceanCenter = CFrame.new(0, SURFACE_Y - maxDepth / 2, 0)
-local oceanSize = Vector3.new(OCEAN_WIDTH, maxDepth, OCEAN_WIDTH)
-terrain:FillBlock(oceanCenter, oceanSize, Enum.Material.Water)
+local function fillChunked(minCorner: Vector3, fullSize: Vector3, material: Enum.Material)
+	local chunksX = math.ceil(fullSize.X / CHUNK_SIZE)
+	local chunksY = math.ceil(fullSize.Y / CHUNK_SIZE)
+	local chunksZ = math.ceil(fullSize.Z / CHUNK_SIZE)
 
-local floorCenter = CFrame.new(0, SURFACE_Y - maxDepth - FLOOR_THICKNESS / 2, 0)
+	for cx = 0, chunksX - 1 do
+		local sizeX = math.min(CHUNK_SIZE, fullSize.X - cx * CHUNK_SIZE)
+		for cy = 0, chunksY - 1 do
+			local sizeY = math.min(CHUNK_SIZE, fullSize.Y - cy * CHUNK_SIZE)
+			for cz = 0, chunksZ - 1 do
+				local sizeZ = math.min(CHUNK_SIZE, fullSize.Z - cz * CHUNK_SIZE)
+
+				local chunkSize = Vector3.new(sizeX, sizeY, sizeZ)
+				local chunkCenter = minCorner + Vector3.new(
+					cx * CHUNK_SIZE + sizeX / 2,
+					cy * CHUNK_SIZE + sizeY / 2,
+					cz * CHUNK_SIZE + sizeZ / 2
+				)
+				terrain:FillBlock(CFrame.new(chunkCenter), chunkSize, material)
+			end
+		end
+	end
+end
+
+local oceanMin = Vector3.new(-OCEAN_WIDTH / 2, SURFACE_Y - maxDepth, -OCEAN_WIDTH / 2)
+local oceanSize = Vector3.new(OCEAN_WIDTH, maxDepth, OCEAN_WIDTH)
+fillChunked(oceanMin, oceanSize, Enum.Material.Water)
+
+local floorMin = Vector3.new(-OCEAN_WIDTH / 2, SURFACE_Y - maxDepth - FLOOR_THICKNESS, -OCEAN_WIDTH / 2)
 local floorSize = Vector3.new(OCEAN_WIDTH, FLOOR_THICKNESS, OCEAN_WIDTH)
-terrain:FillBlock(floorCenter, floorSize, Enum.Material.Rock)
+fillChunked(floorMin, floorSize, Enum.Material.Rock)
