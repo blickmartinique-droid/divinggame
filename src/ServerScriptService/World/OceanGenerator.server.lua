@@ -8,7 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 
-local OCEAN_WIDTH = 3000 -- studs, horizontal extent (X and Z)
+local OCEAN_WIDTH = 1000 -- studs, horizontal extent (X and Z)
 local SURFACE_Y = 0
 local FLOOR_THICKNESS = 20
 
