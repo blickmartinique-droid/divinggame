@@ -23,6 +23,9 @@ local RIGHT_KEYS = { [Enum.KeyCode.D] = true, [Enum.KeyCode.Right] = true }
 local ASCEND_KEYS = { [Enum.KeyCode.Space] = true }
 local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = true }
 
+local TURN_RESPONSIVENESS = 8 -- higher = snappier turning, lower = floatier
+local ANIMATION_FADE_TIME = 0.3
+
 local heldKeys = {}
 
 UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
@@ -106,7 +109,7 @@ local function onCharacterAdded(character)
 	local isMoving = false
 
 	local heartbeatConnection
-	heartbeatConnection = RunService.Heartbeat:Connect(function()
+	heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
 		if humanoid.Health <= 0 or not character.Parent then
 			heartbeatConnection:Disconnect()
 			return
@@ -145,7 +148,9 @@ local function onCharacterAdded(character)
 		rootPart.AssemblyLinearVelocity = fullVelocity
 
 		if fullVelocity.Magnitude > 0.01 then
-			rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
+			local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
+			local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
+			rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 		end
 
 		local nowMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
@@ -153,17 +158,17 @@ local function onCharacterAdded(character)
 			isMoving = nowMoving
 			if isMoving then
 				if animationTracks.idle then
-					animationTracks.idle:Stop()
+					animationTracks.idle:Stop(ANIMATION_FADE_TIME)
 				end
 				if animationTracks.move then
-					animationTracks.move:Play()
+					animationTracks.move:Play(ANIMATION_FADE_TIME)
 				end
 			else
 				if animationTracks.move then
-					animationTracks.move:Stop()
+					animationTracks.move:Stop(ANIMATION_FADE_TIME)
 				end
 				if animationTracks.idle then
-					animationTracks.idle:Play()
+					animationTracks.idle:Play(ANIMATION_FADE_TIME)
 				end
 			end
 		end
