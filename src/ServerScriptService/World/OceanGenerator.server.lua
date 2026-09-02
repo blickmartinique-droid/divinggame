@@ -11,7 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 
-local OCEAN_WIDTH = 1000 -- studs, horizontal extent (X and Z)
+local OCEAN_WIDTH = 2000 -- studs, horizontal extent (X and Z)
 local SURFACE_Y = 0
 local FLOOR_THICKNESS = 20
 local CHUNK_SIZE = 200
@@ -51,11 +51,19 @@ local floorMin = Vector3.new(-OCEAN_WIDTH / 2, SURFACE_Y - maxDepth - FLOOR_THIC
 local floorSize = Vector3.new(OCEAN_WIDTH, FLOOR_THICKNESS, OCEAN_WIDTH)
 fillChunked(floorMin, floorSize, Enum.Material.Rock)
 
--- Visual tuning: default Terrain water looks flat and murky. A deeper,
--- more saturated color with some waves and reflectance reads as an ocean
--- rather than a puddle.
-terrain.WaterColor = Color3.fromRGB(11, 83, 108)
-terrain.WaterTransparency = 0.3
-terrain.WaterReflectance = 0.15
-terrain.WaterWaveSize = 0.15
-terrain.WaterWaveSpeed = 8
+-- Visual tuning: default Terrain water looks flat and murky. A vivid
+-- turquoise with strong waves and sun reflectance goes for a bright,
+-- lively open-ocean look (Sea of Thieves-ish) rather than a puddle.
+terrain.WaterColor = Color3.fromRGB(15, 118, 130)
+terrain.WaterTransparency = 0.35
+terrain.WaterReflectance = 0.3
+terrain.WaterWaveSize = 0.35
+terrain.WaterWaveSpeed = 12
+
+local Lighting = game:GetService("Lighting")
+Lighting.ClockTime = 14
+Lighting.Brightness = 3
+Lighting.Ambient = Color3.fromRGB(70, 90, 100)
+Lighting.OutdoorAmbient = Color3.fromRGB(130, 160, 170)
+Lighting.FogColor = Color3.fromRGB(120, 170, 180)
+Lighting.FogEnd = 1500
