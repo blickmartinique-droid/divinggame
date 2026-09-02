@@ -25,7 +25,7 @@ local RARITY_COLORS = {
 	["Peu commune"] = Color3.fromRGB(90, 200, 120),
 	Rare = Color3.fromRGB(80, 140, 230),
 	["Très rare"] = Color3.fromRGB(180, 90, 220),
-	Légendaire = Color3.fromRGB(240, 180, 40),
+	["Légendaire"] = Color3.fromRGB(240, 180, 40),
 }
 
 local function pickWeightedTreasureType()
