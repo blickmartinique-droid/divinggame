@@ -120,3 +120,92 @@ for i = 1, RAMP_STEP_COUNT do
 	step.Position = Vector3.new(distanceFromCenter, stepY, 0)
 	step.Parent = rampFolder
 end
+
+-- Atmosphere for a softer horizon/sky (cheap but effective realism boost).
+local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+if not atmosphere then
+	atmosphere = Instance.new("Atmosphere")
+	atmosphere.Parent = Lighting
+end
+atmosphere.Density = 0.3
+atmosphere.Offset = 0.25
+atmosphere.Color = Color3.fromRGB(199, 232, 247)
+atmosphere.Decay = Color3.fromRGB(106, 150, 168)
+atmosphere.Glare = 0.2
+atmosphere.Haze = 1.2
+
+-- Shore foam: a ring of small particle emitters lapping at the island's
+-- waterline.
+local existingFoam = Workspace:FindFirstChild("ShoreFoam")
+if existingFoam then
+	existingFoam:Destroy()
+end
+
+local foamFolder = Instance.new("Folder")
+foamFolder.Name = "ShoreFoam"
+foamFolder.Parent = Workspace
+
+local FOAM_POINTS = 28
+for i = 1, FOAM_POINTS do
+	local angle = (i / FOAM_POINTS) * math.pi * 2
+	local anchor = Instance.new("Part")
+	anchor.Name = "FoamAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.Position = Vector3.new(math.cos(angle) * (ISLAND_RADIUS + 3), 0.3, math.sin(angle) * (ISLAND_RADIUS + 3))
+	anchor.Parent = foamFolder
+
+	local foam = Instance.new("ParticleEmitter")
+	foam.Rate = 4
+	foam.Lifetime = NumberRange.new(1, 2)
+	foam.Speed = NumberRange.new(0.5, 1.5)
+	foam.SpreadAngle = Vector2.new(30, 30)
+	foam.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.2),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	foam.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	foam.Color = ColorSequence.new(Color3.new(1, 1, 1))
+	foam.Parent = anchor
+end
+
+-- Underwater light dust near the island's shallow water: soft drifting
+-- particles standing in for sunbeams filtering through the surface.
+local existingDust = Workspace:FindFirstChild("UnderwaterLightDust")
+if existingDust then
+	existingDust:Destroy()
+end
+
+local dustAnchor = Instance.new("Part")
+dustAnchor.Name = "UnderwaterLightDust"
+dustAnchor.Anchored = true
+dustAnchor.CanCollide = false
+dustAnchor.Transparency = 1
+dustAnchor.Size = Vector3.new(1, 1, 1)
+dustAnchor.Position = Vector3.new(0, -20, 0)
+dustAnchor.Parent = Workspace
+
+local dust = Instance.new("ParticleEmitter")
+dust.Rate = 6
+dust.Lifetime = NumberRange.new(4, 8)
+dust.Speed = NumberRange.new(0.2, 0.6)
+dust.SpreadAngle = Vector2.new(180, 30)
+dust.LightEmission = 0.6
+dust.LightInfluence = 0
+dust.Size = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.4),
+	NumberSequenceKeypoint.new(0.5, 1.2),
+	NumberSequenceKeypoint.new(1, 0),
+})
+dust.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.6),
+	NumberSequenceKeypoint.new(0.5, 0.7),
+	NumberSequenceKeypoint.new(1, 1),
+})
+dust.Color = ColorSequence.new(Color3.fromRGB(210, 240, 255))
+dust.Parent = dustAnchor
