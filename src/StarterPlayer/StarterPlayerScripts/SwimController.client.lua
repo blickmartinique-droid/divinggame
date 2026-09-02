@@ -99,6 +99,81 @@ local function loadSwimAnimations(character, humanoid)
 	return tracks
 end
 
+-- Bubble trail behind the hands while swimming, purely cosmetic feedback for
+-- movement speed/direction.
+local function createHandTrail(hand)
+	local attachmentFront = Instance.new("Attachment")
+	attachmentFront.Position = Vector3.new(0, 0.4, 0)
+	attachmentFront.Parent = hand
+
+	local attachmentBack = Instance.new("Attachment")
+	attachmentBack.Position = Vector3.new(0, -0.4, 0)
+	attachmentBack.Parent = hand
+
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = attachmentFront
+	trail.Attachment1 = attachmentBack
+	trail.Lifetime = 0.5
+	trail.MinLength = 0
+	trail.FaceCamera = true
+	trail.Color = ColorSequence.new(Color3.fromRGB(235, 250, 255))
+	trail.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.4),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	trail.WidthScale = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	trail.Enabled = false
+	trail.Parent = hand
+
+	return trail
+end
+
+local function setupSwimEffects(character)
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local effects = { trails = {} }
+
+	local leftHand = character:FindFirstChild("LeftHand")
+	local rightHand = character:FindFirstChild("RightHand")
+	if leftHand then
+		table.insert(effects.trails, createHandTrail(leftHand))
+	end
+	if rightHand then
+		table.insert(effects.trails, createHandTrail(rightHand))
+	end
+
+	if rootPart then
+		local bubbles = Instance.new("ParticleEmitter")
+		bubbles.Rate = 0
+		bubbles.Lifetime = NumberRange.new(0.4, 0.8)
+		bubbles.Speed = NumberRange.new(1, 2)
+		bubbles.Size = NumberSequence.new(0.15)
+		bubbles.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.3),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		bubbles.Color = ColorSequence.new(Color3.new(1, 1, 1))
+		bubbles.Parent = rootPart
+		effects.bubbles = bubbles
+	end
+
+	return effects
+end
+
+local function setSwimEffectsActive(effects, active)
+	if not effects then
+		return
+	end
+	for _, trail in ipairs(effects.trails) do
+		trail.Enabled = active
+	end
+	if effects.bubbles then
+		effects.bubbles.Rate = active and 25 or 0
+	end
+end
+
 local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	local rootPart = character:WaitForChild("HumanoidRootPart")
@@ -106,6 +181,7 @@ local function onCharacterAdded(character)
 	humanoid.PlatformStand = true
 
 	local animationTracks = loadSwimAnimations(character, humanoid)
+	local swimEffects = setupSwimEffects(character)
 	local isMoving = false
 
 	local heartbeatConnection
@@ -154,21 +230,24 @@ local function onCharacterAdded(character)
 		end
 
 		local nowMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
-		if animationTracks and nowMoving ~= isMoving then
+		if nowMoving ~= isMoving then
 			isMoving = nowMoving
-			if isMoving then
-				if animationTracks.idle then
-					animationTracks.idle:Stop(ANIMATION_FADE_TIME)
-				end
-				if animationTracks.move then
-					animationTracks.move:Play(ANIMATION_FADE_TIME)
-				end
-			else
-				if animationTracks.move then
-					animationTracks.move:Stop(ANIMATION_FADE_TIME)
-				end
-				if animationTracks.idle then
-					animationTracks.idle:Play(ANIMATION_FADE_TIME)
+			setSwimEffectsActive(swimEffects, isMoving)
+			if animationTracks then
+				if isMoving then
+					if animationTracks.idle then
+						animationTracks.idle:Stop(ANIMATION_FADE_TIME)
+					end
+					if animationTracks.move then
+						animationTracks.move:Play(ANIMATION_FADE_TIME)
+					end
+				else
+					if animationTracks.move then
+						animationTracks.move:Stop(ANIMATION_FADE_TIME)
+					end
+					if animationTracks.idle then
+						animationTracks.idle:Play(ANIMATION_FADE_TIME)
+					end
 				end
 			end
 		end
