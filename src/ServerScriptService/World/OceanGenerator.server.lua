@@ -57,7 +57,7 @@ fillChunked(floorMin, floorSize, Enum.Material.Rock)
 terrain.WaterColor = Color3.fromRGB(15, 118, 130)
 terrain.WaterTransparency = 0.35
 terrain.WaterReflectance = 0.3
-terrain.WaterWaveSize = 0.35
+terrain.WaterWaveSize = 0.45
 terrain.WaterWaveSpeed = 12
 
 local Lighting = game:GetService("Lighting")
@@ -209,3 +209,53 @@ dust.Transparency = NumberSequence.new({
 })
 dust.Color = ColorSequence.new(Color3.fromRGB(210, 240, 255))
 dust.Parent = dustAnchor
+
+-- Terrain water only exposes a single global wave size/speed (no native
+-- support for mixed small/medium/large waves), so scattered whitecap
+-- bursts of varying scale are used across the open ocean to fake that
+-- impression of a choppier, more varied sea.
+local Debris = game:GetService("Debris")
+
+local WHITECAP_MIN_RADIUS = ISLAND_RADIUS + 20
+local WHITECAP_MAX_RADIUS = 900
+local WHITECAP_MIN_INTERVAL = 1
+local WHITECAP_MAX_INTERVAL = 3
+
+task.spawn(function()
+	while true do
+		task.wait(WHITECAP_MIN_INTERVAL + math.random() * (WHITECAP_MAX_INTERVAL - WHITECAP_MIN_INTERVAL))
+
+		local angle = math.random() * math.pi * 2
+		local radius = WHITECAP_MIN_RADIUS + math.random() * (WHITECAP_MAX_RADIUS - WHITECAP_MIN_RADIUS)
+		local position = Vector3.new(math.cos(angle) * radius, 0.3, math.sin(angle) * radius)
+
+		local anchor = Instance.new("Part")
+		anchor.Name = "WhitecapAnchor"
+		anchor.Anchored = true
+		anchor.CanCollide = false
+		anchor.Transparency = 1
+		anchor.Size = Vector3.new(1, 1, 1)
+		anchor.Position = position
+		anchor.Parent = Workspace
+
+		local scale = 0.5 + math.random() * 2 -- small, medium, or large crest
+		local whitecap = Instance.new("ParticleEmitter")
+		whitecap.Rate = 0
+		whitecap.Lifetime = NumberRange.new(0.8, 1.4)
+		whitecap.Speed = NumberRange.new(1, 3)
+		whitecap.SpreadAngle = Vector2.new(180, 180)
+		whitecap.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 2 * scale),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		whitecap.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.3),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		whitecap.Color = ColorSequence.new(Color3.new(1, 1, 1))
+		whitecap.Parent = anchor
+		whitecap:Emit(math.floor(6 * scale))
+
+		Debris:AddItem(anchor, 2)
+	end
+end)
