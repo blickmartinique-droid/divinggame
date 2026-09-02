@@ -80,16 +80,6 @@ local oxygenBarFillCorner = Instance.new("UICorner")
 oxygenBarFillCorner.CornerRadius = UDim.new(1, 0)
 oxygenBarFillCorner.Parent = oxygenBarFill
 
-local oxygenValueLabel = Instance.new("TextLabel")
-oxygenValueLabel.Name = "OxygenValueLabel"
-oxygenValueLabel.Size = UDim2.new(1, 0, 1, 0)
-oxygenValueLabel.BackgroundTransparency = 1
-oxygenValueLabel.Font = Enum.Font.GothamBold
-oxygenValueLabel.TextSize = 14
-oxygenValueLabel.TextColor3 = Color3.new(1, 1, 1)
-oxygenValueLabel.Text = "60"
-oxygenValueLabel.Parent = oxygenBarBackground
-
 local oxygenCaption = Instance.new("TextLabel")
 oxygenCaption.Name = "OxygenCaption"
 oxygenCaption.Position = UDim2.new(0, 0, 0, 68)
@@ -112,7 +102,6 @@ RunService.Heartbeat:Connect(function()
 	if oxygenValue then
 		local fraction = math.clamp(oxygenValue.Value / OxygenConfig.MaxOxygen, 0, 1)
 		oxygenBarFill.Size = UDim2.new(fraction, 0, 1, 0)
-		oxygenValueLabel.Text = string.format("%d s", math.ceil(oxygenValue.Value))
 
 		if fraction <= LOW_OXYGEN_THRESHOLD then
 			local lowFraction = fraction / LOW_OXYGEN_THRESHOLD

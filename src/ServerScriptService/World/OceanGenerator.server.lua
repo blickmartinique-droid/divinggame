@@ -67,3 +67,23 @@ Lighting.Ambient = Color3.fromRGB(70, 90, 100)
 Lighting.OutdoorAmbient = Color3.fromRGB(130, 160, 170)
 Lighting.FogColor = Color3.fromRGB(120, 170, 180)
 Lighting.FogEnd = 1500
+
+-- Small spawn island carved out of the ocean (grass poking above the water
+-- line, sand rim underwater) instead of a flat Baseplate, so the start of
+-- the dive feels like leaving land rather than standing on a floating slab.
+local ISLAND_RADIUS = 55
+local ISLAND_HEIGHT = 18
+local islandCFrame = CFrame.new(0, 2, 0)
+terrain:FillCylinder(islandCFrame, ISLAND_HEIGHT, ISLAND_RADIUS, Enum.Material.Sand)
+terrain:FillCylinder(islandCFrame * CFrame.new(0, 3, 0), ISLAND_HEIGHT - 6, ISLAND_RADIUS - 12, Enum.Material.Grass)
+
+local oldBaseplate = Workspace:FindFirstChild("Baseplate")
+if oldBaseplate then
+	oldBaseplate:Destroy()
+end
+
+local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
+if spawnLocation then
+	spawnLocation.Position = Vector3.new(0, 8, 0)
+	spawnLocation.Size = Vector3.new(12, 1, 12)
+end
