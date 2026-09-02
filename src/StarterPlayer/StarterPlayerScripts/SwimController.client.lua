@@ -1,9 +1,11 @@
--- Free-swim movement controller. Roblox's default Humanoid movement actively
--- snaps the character to the ground and cancels any vertical velocity we try
--- to set while grounded, so instead of fighting that, PlatformStand fully
--- disables the built-in controller and this script drives 100% of the
--- character's motion: horizontal (camera-relative WASD/ZQSD), vertical
--- (Space/LeftControl/C), facing direction, and swim animations.
+-- Free-swim movement controller, active only while underwater (depth > 0).
+-- On land / in the air, the default Roblox Humanoid movement (walking,
+-- gravity, jumping) is left alone. Underwater, Roblox's built-in ground-
+-- follow logic would otherwise cancel any vertical velocity we set, so
+-- PlatformStand fully disables the built-in controller and this script
+-- drives 100% of the character's motion: horizontal (camera-relative
+-- WASD/ZQSD), vertical (Space/LeftControl/C), facing direction, and swim
+-- animations.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local MovementConfig = require(ReplicatedStorage.Shared.Config.MovementConfig)
+local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -58,14 +61,13 @@ end
 
 -- Reuses the swim animations Roblox already ships on every default avatar
 -- (normally auto-played by the built-in Animate script when touching Terrain
--- water). PlatformStand disables that script's control, so it's disabled
--- here and its animations are played manually instead.
+-- water). Swim mode disables that script's control, so it's played manually
+-- instead while swimming.
 local function loadSwimAnimations(character, humanoid)
 	local animateScript = character:FindFirstChild("Animate")
 	if not animateScript then
 		return nil
 	end
-	animateScript.Disabled = true
 
 	local animator = humanoid:FindFirstChildOfClass("Animator")
 	if not animator then
@@ -177,17 +179,58 @@ end
 local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	local rootPart = character:WaitForChild("HumanoidRootPart")
+	local animateScript = character:WaitForChild("Animate")
 
-	humanoid.PlatformStand = true
+	humanoid.WalkSpeed = MovementConfig.BaseSwimSpeed
 
 	local animationTracks = loadSwimAnimations(character, humanoid)
 	local swimEffects = setupSwimEffects(character)
+	local isSwimming = false
 	local isMoving = false
+
+	local function stopSwimAnimations()
+		isMoving = false
+		if animationTracks then
+			if animationTracks.move then
+				animationTracks.move:Stop(ANIMATION_FADE_TIME)
+			end
+			if animationTracks.idle then
+				animationTracks.idle:Stop(ANIMATION_FADE_TIME)
+			end
+		end
+		setSwimEffectsActive(swimEffects, false)
+	end
+
+	local function enterSwimMode()
+		isSwimming = true
+		animateScript.Disabled = true
+		humanoid.PlatformStand = true
+	end
+
+	local function exitSwimMode()
+		isSwimming = false
+		humanoid.PlatformStand = false
+		animateScript.Disabled = false
+		stopSwimAnimations()
+	end
 
 	local heartbeatConnection
 	heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
 		if humanoid.Health <= 0 or not character.Parent then
 			heartbeatConnection:Disconnect()
+			return
+		end
+
+		local shouldSwim = DepthUtils.GetDepth(rootPart.Position) > 0
+		if shouldSwim ~= isSwimming then
+			if shouldSwim then
+				enterSwimMode()
+			else
+				exitSwimMode()
+			end
+		end
+
+		if not isSwimming then
 			return
 		end
 
