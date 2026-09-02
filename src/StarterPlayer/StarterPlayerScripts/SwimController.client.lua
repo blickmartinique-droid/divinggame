@@ -159,6 +159,24 @@ local function setupSwimEffects(character)
 		bubbles.Color = ColorSequence.new(Color3.new(1, 1, 1))
 		bubbles.Parent = rootPart
 		effects.bubbles = bubbles
+
+		local splash = Instance.new("ParticleEmitter")
+		splash.Name = "SplashEmitter"
+		splash.Rate = 0
+		splash.Lifetime = NumberRange.new(0.3, 0.6)
+		splash.Speed = NumberRange.new(6, 14)
+		splash.SpreadAngle = Vector2.new(180, 180)
+		splash.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.6),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		splash.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		splash.Color = ColorSequence.new(Color3.new(1, 1, 1))
+		splash.Parent = rootPart
+		effects.splash = splash
 	end
 
 	return effects
@@ -205,6 +223,9 @@ local function onCharacterAdded(character)
 		isSwimming = true
 		animateScript.Disabled = true
 		humanoid.PlatformStand = true
+		if swimEffects.splash then
+			swimEffects.splash:Emit(20)
+		end
 	end
 
 	local function exitSwimMode()
@@ -212,6 +233,9 @@ local function onCharacterAdded(character)
 		humanoid.PlatformStand = false
 		animateScript.Disabled = false
 		stopSwimAnimations()
+		if swimEffects.splash then
+			swimEffects.splash:Emit(20)
+		end
 	end
 
 	local heartbeatConnection

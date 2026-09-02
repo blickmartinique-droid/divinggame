@@ -82,8 +82,41 @@ if oldBaseplate then
 	oldBaseplate:Destroy()
 end
 
+local ISLAND_TOP_Y = 11 -- top surface of the grass cylinder above, from its CFrame/height
+
 local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
 if spawnLocation then
-	spawnLocation.Position = Vector3.new(0, 8, 0)
+	spawnLocation.Position = Vector3.new(0, ISLAND_TOP_Y + 0.5, 0)
 	spawnLocation.Size = Vector3.new(12, 1, 12)
+end
+
+-- Wooden ramp from the water up to the island: the cylinder island has a
+-- flat top and steep sides, too steep to walk up, so a simple staircase of
+-- steps bridges the gap.
+local existingRamp = Workspace:FindFirstChild("IslandRamp")
+if existingRamp then
+	existingRamp:Destroy()
+end
+
+local rampFolder = Instance.new("Folder")
+rampFolder.Name = "IslandRamp"
+rampFolder.Parent = Workspace
+
+local RAMP_STEP_COUNT = 10
+local RAMP_STEP_WIDTH = 14
+local RAMP_STEP_DEPTH = 4
+local RAMP_RUN = 40 -- studs, horizontal distance the ramp covers
+
+for i = 1, RAMP_STEP_COUNT do
+	local t = i / RAMP_STEP_COUNT
+	local step = Instance.new("Part")
+	step.Name = "RampStep"
+	step.Anchored = true
+	step.Material = Enum.Material.WoodPlanks
+	step.Color = Color3.fromRGB(120, 90, 60)
+	step.Size = Vector3.new(RAMP_STEP_WIDTH, 1.5, RAMP_STEP_DEPTH)
+	local distanceFromCenter = ISLAND_RADIUS + RAMP_RUN * (1 - t)
+	local stepY = ISLAND_TOP_Y * t
+	step.Position = Vector3.new(distanceFromCenter, stepY, 0)
+	step.Parent = rampFolder
 end
