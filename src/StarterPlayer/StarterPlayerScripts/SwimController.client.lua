@@ -29,7 +29,7 @@ local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = tru
 
 local TURN_RESPONSIVENESS = 8 -- higher = snappier turning, lower = floatier
 local ANIMATION_FADE_TIME = 0.3
-local ANIMATION_PLAYBACK_SPEED = 0.6 -- slows the swim animations down
+local ANIMATION_PLAYBACK_SPEED = 0.4 -- slows the swim animations down
 
 local heldKeys = {}
 
