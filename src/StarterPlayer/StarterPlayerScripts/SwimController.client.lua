@@ -29,6 +29,7 @@ local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = tru
 
 local TURN_RESPONSIVENESS = 8 -- higher = snappier turning, lower = floatier
 local ANIMATION_FADE_TIME = 0.3
+local ANIMATION_PLAYBACK_SPEED = 0.6 -- slows the swim animations down
 
 local heldKeys = {}
 
@@ -236,6 +237,7 @@ local function onCharacterAdded(character)
 		currentSwimState = state
 		if animationTracks and animationTracks[state] then
 			animationTracks[state]:Play(ANIMATION_FADE_TIME)
+			animationTracks[state]:AdjustSpeed(ANIMATION_PLAYBACK_SPEED)
 		end
 		setSwimEffectsActive(swimEffects, state ~= "Idle")
 	end
@@ -319,8 +321,17 @@ local function onCharacterAdded(character)
 		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
 		rootPart.AssemblyLinearVelocity = fullVelocity
 
-		if fullVelocity.Magnitude > 0.01 then
-			local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
+		-- Shift lock keeps the character facing the camera regardless of
+		-- movement direction (so you can backpedal while looking forward).
+		-- Fighting that with our own velocity-based facing caused the
+		-- rotation to fight the camera when moving backward, so defer to
+		-- camera facing whenever shift lock (or first person) is active.
+		local shiftLockActive = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		local facingDirection = shiftLockActive and camera.CFrame.LookVector or fullVelocity
+
+		if facingDirection.Magnitude > 0.01 then
+			local flatFacing = shiftLockActive and flattenAndNormalize(facingDirection) or facingDirection.Unit
+			local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + flatFacing)
 			local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 			rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 		end
