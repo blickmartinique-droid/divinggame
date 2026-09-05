@@ -15,7 +15,6 @@ local Workspace = game:GetService("Workspace")
 
 local MovementConfig = require(ReplicatedStorage.Shared.Config.MovementConfig)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
-local SwimAnimationsConfig = require(ReplicatedStorage.Shared.Config.SwimAnimationsConfig)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -60,11 +59,22 @@ local function flattenAndNormalize(vector)
 	return flat
 end
 
--- Finds the swim/swim-idle animations Roblox ships on every default avatar
+-- Reuses the swim animations Roblox already ships on every default avatar
 -- (normally auto-played by the built-in Animate script when touching Terrain
--- water), used as a fallback for any direction not yet set in
--- SwimAnimationsConfig.
-local function findDefaultSwimAnimations(animateScript)
+-- water). Swim mode disables that script's control, so it's played manually
+-- instead while swimming.
+local function loadSwimAnimations(character, humanoid)
+	local animateScript = character:FindFirstChild("Animate")
+	if not animateScript then
+		return nil
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
+
 	local moveAnim, idleAnim
 	for _, descendant in ipairs(animateScript:GetDescendants()) do
 		if descendant:IsA("Animation") then
@@ -78,46 +88,17 @@ local function findDefaultSwimAnimations(animateScript)
 			end
 		end
 	end
-	return moveAnim, idleAnim
-end
 
--- Loads one track per swim state (Idle/Forward/Backward): a custom asset ID
--- from SwimAnimationsConfig if one has been picked, otherwise the default
--- avatar animation as a placeholder. Swim mode disables the default Animate
--- script's own control, so these are played manually instead while swimming.
-local function loadSwimAnimations(character, humanoid)
-	local animateScript = character:FindFirstChild("Animate")
-	local defaultMoveAnim, defaultIdleAnim
-	if animateScript then
-		defaultMoveAnim, defaultIdleAnim = findDefaultSwimAnimations(animateScript)
+	local tracks = {}
+	if moveAnim then
+		tracks.move = animator:LoadAnimation(moveAnim)
+		tracks.move.Looped = true
 	end
-
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
-		animator = Instance.new("Animator")
-		animator.Parent = humanoid
+	if idleAnim then
+		tracks.idle = animator:LoadAnimation(idleAnim)
+		tracks.idle.Looped = true
 	end
-
-	local function loadTrack(assetId, fallbackAnim)
-		local animation = Instance.new("Animation")
-		if assetId then
-			animation.AnimationId = assetId
-		elseif fallbackAnim then
-			animation.AnimationId = fallbackAnim.AnimationId
-		else
-			return nil
-		end
-
-		local track = animator:LoadAnimation(animation)
-		track.Looped = true
-		return track
-	end
-
-	return {
-		Idle = loadTrack(SwimAnimationsConfig.Idle, defaultIdleAnim),
-		Forward = loadTrack(SwimAnimationsConfig.Forward, defaultMoveAnim),
-		Backward = loadTrack(SwimAnimationsConfig.Backward, defaultMoveAnim),
-	}
+	return tracks
 end
 
 -- Bubble trail behind the hands while swimming, purely cosmetic feedback for
@@ -223,27 +204,18 @@ local function onCharacterAdded(character)
 	local animationTracks = loadSwimAnimations(character, humanoid)
 	local swimEffects = setupSwimEffects(character)
 	local isSwimming = false
-	local currentSwimState = nil
-
-	local function playSwimState(state)
-		if currentSwimState == state then
-			return
-		end
-		if animationTracks and currentSwimState and animationTracks[currentSwimState] then
-			animationTracks[currentSwimState]:Stop(ANIMATION_FADE_TIME)
-		end
-		currentSwimState = state
-		if animationTracks and animationTracks[state] then
-			animationTracks[state]:Play(ANIMATION_FADE_TIME)
-		end
-		setSwimEffectsActive(swimEffects, state ~= "Idle")
-	end
+	local isMoving = false
 
 	local function stopSwimAnimations()
-		if animationTracks and currentSwimState and animationTracks[currentSwimState] then
-			animationTracks[currentSwimState]:Stop(ANIMATION_FADE_TIME)
+		isMoving = false
+		if animationTracks then
+			if animationTracks.move then
+				animationTracks.move:Stop(ANIMATION_FADE_TIME)
+			end
+			if animationTracks.idle then
+				animationTracks.idle:Stop(ANIMATION_FADE_TIME)
+			end
 		end
-		currentSwimState = nil
 		setSwimEffectsActive(swimEffects, false)
 	end
 
@@ -324,18 +296,28 @@ local function onCharacterAdded(character)
 			rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 		end
 
-		local movingBackward = isAnyKeyHeld(BACK_KEYS)
-		local isMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
-
-		local targetState
-		if movingBackward then
-			targetState = "Backward"
-		elseif isMoving then
-			targetState = "Forward"
-		else
-			targetState = "Idle"
+		local nowMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
+		if nowMoving ~= isMoving then
+			isMoving = nowMoving
+			setSwimEffectsActive(swimEffects, isMoving)
+			if animationTracks then
+				if isMoving then
+					if animationTracks.idle then
+						animationTracks.idle:Stop(ANIMATION_FADE_TIME)
+					end
+					if animationTracks.move then
+						animationTracks.move:Play(ANIMATION_FADE_TIME)
+					end
+				else
+					if animationTracks.move then
+						animationTracks.move:Stop(ANIMATION_FADE_TIME)
+					end
+					if animationTracks.idle then
+						animationTracks.idle:Play(ANIMATION_FADE_TIME)
+					end
+				end
+			end
 		end
-		playSwimState(targetState)
 	end)
 end
 
