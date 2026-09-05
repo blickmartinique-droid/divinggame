@@ -29,7 +29,11 @@ local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = tru
 
 local TURN_RESPONSIVENESS = 8 -- higher = snappier turning, lower = floatier
 local ANIMATION_FADE_TIME = 0.3
-local ANIMATION_PLAYBACK_SPEED = 0.4 -- slows the swim animations down
+local ANIMATION_PLAYBACK_SPEEDS = {
+	Idle = 0.4,
+	Forward = 0.4,
+	Backward = 0.25,
+}
 local SWIM_LEAN_ANGLE = math.rad(75) -- tilts the body into a horizontal "lying" swim pose
 
 local heldKeys = {}
@@ -238,7 +242,7 @@ local function onCharacterAdded(character)
 		currentSwimState = state
 		if animationTracks and animationTracks[state] then
 			animationTracks[state]:Play(ANIMATION_FADE_TIME)
-			animationTracks[state]:AdjustSpeed(ANIMATION_PLAYBACK_SPEED)
+			animationTracks[state]:AdjustSpeed(ANIMATION_PLAYBACK_SPEEDS[state] or 1)
 		end
 		setSwimEffectsActive(swimEffects, state ~= "Idle")
 	end
@@ -328,18 +332,29 @@ local function onCharacterAdded(character)
 		-- Simplest fix: don't touch rotation ourselves while it's active,
 		-- and let Roblox's own system own it entirely.
 		local shiftLockActive = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		local movingBackward = isAnyKeyHeld(BACK_KEYS)
 
 		if not shiftLockActive and fullVelocity.Magnitude > 0.01 then
-			local aimCFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
-			-- Extra tilt on top of the facing direction so the body lies
-			-- roughly horizontal ("torpedo" swim pose) instead of staying
-			-- upright while gliding forward/backward.
-			local targetCFrame = aimCFrame * CFrame.Angles(-SWIM_LEAN_ANGLE, 0, 0)
-			local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
-			rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
+			-- Backward keeps facing the camera direction and leans back
+			-- (backstroke-style) instead of spinning around to dive
+			-- head-first the way forward movement does.
+			local yawSourceDirection = movingBackward and flatLook or flattenAndNormalize(fullVelocity)
+			local leanAngle = movingBackward and SWIM_LEAN_ANGLE or -SWIM_LEAN_ANGLE
+
+			if yawSourceDirection.Magnitude > 0.01 then
+				-- Built from explicit yaw-then-pitch angles rather than
+				-- CFrame.new(pos, lookAt) each frame, which was sensitive to
+				-- tiny per-frame direction jitter and made the character
+				-- visibly wobble once tilted onto its side.
+				local yaw = math.atan2(-yawSourceDirection.X, -yawSourceDirection.Z)
+				local targetCFrame = CFrame.new(rootPart.Position)
+					* CFrame.Angles(0, yaw, 0)
+					* CFrame.Angles(leanAngle, 0, 0)
+				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
+				rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
+			end
 		end
 
-		local movingBackward = isAnyKeyHeld(BACK_KEYS)
 		local isMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
 
 		local targetState
