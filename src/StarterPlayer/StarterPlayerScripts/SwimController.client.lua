@@ -321,17 +321,15 @@ local function onCharacterAdded(character)
 		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
 		rootPart.AssemblyLinearVelocity = fullVelocity
 
-		-- Shift lock keeps the character facing the camera regardless of
-		-- movement direction (so you can backpedal while looking forward).
-		-- Fighting that with our own velocity-based facing caused the
-		-- rotation to fight the camera when moving backward, so defer to
-		-- camera facing whenever shift lock (or first person) is active.
+		-- Shift lock (or first person) drives its own character-facing
+		-- rotation independently of PlatformStand, so our own rotation
+		-- write here fought it every frame and caused visible shaking.
+		-- Simplest fix: don't touch rotation ourselves while it's active,
+		-- and let Roblox's own system own it entirely.
 		local shiftLockActive = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
-		local facingDirection = shiftLockActive and camera.CFrame.LookVector or fullVelocity
 
-		if facingDirection.Magnitude > 0.01 then
-			local flatFacing = shiftLockActive and flattenAndNormalize(facingDirection) or facingDirection.Unit
-			local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + flatFacing)
+		if not shiftLockActive and fullVelocity.Magnitude > 0.01 then
+			local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
 			local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 			rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 		end
