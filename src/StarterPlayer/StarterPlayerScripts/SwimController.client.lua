@@ -30,6 +30,7 @@ local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = tru
 local TURN_RESPONSIVENESS = 8 -- higher = snappier turning, lower = floatier
 local ANIMATION_FADE_TIME = 0.3
 local ANIMATION_PLAYBACK_SPEED = 0.4 -- slows the swim animations down
+local SWIM_LEAN_ANGLE = math.rad(75) -- tilts the body into a horizontal "lying" swim pose
 
 local heldKeys = {}
 
@@ -329,7 +330,11 @@ local function onCharacterAdded(character)
 		local shiftLockActive = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
 
 		if not shiftLockActive and fullVelocity.Magnitude > 0.01 then
-			local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
+			local aimCFrame = CFrame.new(rootPart.Position, rootPart.Position + fullVelocity.Unit)
+			-- Extra tilt on top of the facing direction so the body lies
+			-- roughly horizontal ("torpedo" swim pose) instead of staying
+			-- upright while gliding forward/backward.
+			local targetCFrame = aimCFrame * CFrame.Angles(-SWIM_LEAN_ANGLE, 0, 0)
 			local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 			rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 		end
