@@ -6,5 +6,5 @@
 return {
 	Idle = "rbxassetid://88717637028322",
 	Backward = "rbxassetid://121324014130406",
-	Forward = nil,
+	Forward = "rbxassetid://138297722607060",
 }
