@@ -156,8 +156,9 @@ local function setupSwimEffects(character)
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	local effects = { trails = {} }
 
-	local leftHand = character:FindFirstChild("LeftHand")
-	local rightHand = character:FindFirstChild("RightHand")
+	-- R15 names these LeftHand/RightHand; R6 only has whole-arm parts.
+	local leftHand = character:FindFirstChild("LeftHand") or character:FindFirstChild("Left Arm")
+	local rightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	if leftHand then
 		table.insert(effects.trails, createHandTrail(leftHand))
 	end
