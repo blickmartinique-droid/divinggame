@@ -69,10 +69,18 @@ local DESCEND_KEYS = { [Enum.KeyCode.LeftControl] = true, [Enum.KeyCode.C] = tru
 local TURN_RESPONSIVENESS = 8 -- higher = snappier turning, lower = floatier
 local ANIMATION_FADE_TIME = 0.3
 local ANIMATION_PLAYBACK_SPEEDS = {
-	Idle = 0.4,
+	Idle = 0.25,
 	Forward = 0.4,
 	Backward = 0.25,
 }
+
+-- Small hysteresis margin above the surface (Y = 0) before swim mode
+-- actually exits. Without it, tiny position noise right at the waterline
+-- (most visible swimming backward, where the recline pitch tilts the head
+-- up) flickers isSwimming on/off, which stops and restarts whatever swim
+-- animation is currently playing. Entering swim mode is unaffected -- it
+-- still happens the instant depth > 0, same as before.
+local SURFACE_EXIT_BUFFER = 1.5
 
 -- Backward-only pitch tuning (see the forward branch in the movement loop
 -- for how forward's pitch is computed instead -- directly from the real
@@ -363,7 +371,13 @@ local function onCharacterAdded(character)
 			return
 		end
 
-		local shouldSwim = DepthUtils.GetDepth(rootPart.Position) > 0
+		local depth = DepthUtils.GetDepth(rootPart.Position)
+		local shouldSwim
+		if isSwimming then
+			shouldSwim = depth > 0 or rootPart.Position.Y < SURFACE_EXIT_BUFFER
+		else
+			shouldSwim = depth > 0
+		end
 		if shouldSwim ~= isSwimming then
 			if shouldSwim then
 				enterSwimMode()
