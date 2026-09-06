@@ -68,57 +68,85 @@ Lighting.OutdoorAmbient = Color3.fromRGB(130, 160, 170)
 Lighting.FogColor = Color3.fromRGB(120, 170, 180)
 Lighting.FogEnd = 1500
 
--- Small spawn island carved out of the ocean (grass poking above the water
--- line, sand rim underwater) instead of a flat Baseplate, so the start of
--- the dive feels like leaving land rather than standing on a floating slab.
-local ISLAND_RADIUS = 55
-local ISLAND_HEIGHT = 18
-local islandCFrame = CFrame.new(0, 2, 0)
-terrain:FillCylinder(islandCFrame, ISLAND_HEIGHT, ISLAND_RADIUS, Enum.Material.Sand)
-terrain:FillCylinder(islandCFrame * CFrame.new(0, 3, 0), ISLAND_HEIGHT - 6, ISLAND_RADIUS - 12, Enum.Material.Grass)
+-- Natural beach at sea level, replacing the earlier raised floating island.
+-- A dry sand core (where the player spawns) pokes just above the waterline,
+-- surrounded by a wider, gently submerged sand shelf that blends into the
+-- open ocean beyond it. No ramp is needed since there's no cliff to climb --
+-- walking off the sand into deeper water is enough to trigger swim mode.
+local BEACH_CORE_RADIUS = 70 -- dry sand, pokes just above the waterline
+local BEACH_SHELF_RADIUS = 140 -- wider submerged sand shelf around it
+local BEACH_TOP_Y = 4
+local SHELF_BOTTOM_Y = -20
+
+local shelfHeight = BEACH_TOP_Y - SHELF_BOTTOM_Y
+local shelfCFrame = CFrame.new(0, (BEACH_TOP_Y + SHELF_BOTTOM_Y) / 2, 0)
+terrain:FillCylinder(shelfCFrame, shelfHeight, BEACH_SHELF_RADIUS, Enum.Material.Sand)
+
+local BEACH_CORE_BOTTOM_Y = -3
+local coreHeight = BEACH_TOP_Y - BEACH_CORE_BOTTOM_Y
+local coreCFrame = CFrame.new(0, (BEACH_TOP_Y + BEACH_CORE_BOTTOM_Y) / 2, 0)
+terrain:FillCylinder(coreCFrame, coreHeight, BEACH_CORE_RADIUS, Enum.Material.Sand)
+
+-- A thin patch of grass near the center of the dry sand for a bit of natural
+-- color variation -- not a decorated zone, just a beach.
+terrain:FillCylinder(CFrame.new(0, BEACH_TOP_Y - 1, 0), 2, BEACH_CORE_RADIUS - 25, Enum.Material.Grass)
+
+local oldIslandRamp = Workspace:FindFirstChild("IslandRamp")
+if oldIslandRamp then
+	oldIslandRamp:Destroy()
+end
 
 local oldBaseplate = Workspace:FindFirstChild("Baseplate")
 if oldBaseplate then
 	oldBaseplate:Destroy()
 end
 
-local ISLAND_TOP_Y = 11 -- top surface of the grass cylinder above, from its CFrame/height
-
 local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
 if spawnLocation then
-	spawnLocation.Position = Vector3.new(0, ISLAND_TOP_Y + 0.5, 0)
+	spawnLocation.Position = Vector3.new(0, BEACH_TOP_Y + 0.5, 0)
 	spawnLocation.Size = Vector3.new(12, 1, 12)
 end
 
--- Wooden ramp from the water up to the island: the cylinder island has a
--- flat top and steep sides, too steep to walk up, so a simple staircase of
--- steps bridges the gap.
-local existingRamp = Workspace:FindFirstChild("IslandRamp")
-if existingRamp then
-	existingRamp:Destroy()
+-- A handful of simple rocks and light vegetation on the beach -- plain
+-- primitive shapes, not detailed decoration.
+local existingBeachProps = Workspace:FindFirstChild("BeachProps")
+if existingBeachProps then
+	existingBeachProps:Destroy()
 end
 
-local rampFolder = Instance.new("Folder")
-rampFolder.Name = "IslandRamp"
-rampFolder.Parent = Workspace
+local beachPropsFolder = Instance.new("Folder")
+beachPropsFolder.Name = "BeachProps"
+beachPropsFolder.Parent = Workspace
 
-local RAMP_STEP_COUNT = 10
-local RAMP_STEP_WIDTH = 14
-local RAMP_STEP_DEPTH = 4
-local RAMP_RUN = 40 -- studs, horizontal distance the ramp covers
+local ROCK_COUNT = 6
+for i = 1, ROCK_COUNT do
+	local angle = (i / ROCK_COUNT) * math.pi * 2 + 0.3
+	local radius = BEACH_CORE_RADIUS + 10 + math.random() * 20
+	local rock = Instance.new("Part")
+	rock.Name = "BeachRock"
+	rock.Anchored = true
+	rock.Material = Enum.Material.Rock
+	rock.Color = Color3.fromRGB(110, 110, 105)
+	local size = 3 + math.random() * 3
+	rock.Size = Vector3.new(size, size * 0.7, size * 0.9)
+	rock.Position = Vector3.new(math.cos(angle) * radius, BEACH_TOP_Y - 1, math.sin(angle) * radius)
+	rock.Orientation = Vector3.new(0, math.random(0, 360), 0)
+	rock.Parent = beachPropsFolder
+end
 
-for i = 1, RAMP_STEP_COUNT do
-	local t = i / RAMP_STEP_COUNT
-	local step = Instance.new("Part")
-	step.Name = "RampStep"
-	step.Anchored = true
-	step.Material = Enum.Material.WoodPlanks
-	step.Color = Color3.fromRGB(120, 90, 60)
-	step.Size = Vector3.new(RAMP_STEP_WIDTH, 1.5, RAMP_STEP_DEPTH)
-	local distanceFromCenter = ISLAND_RADIUS + RAMP_RUN * (1 - t)
-	local stepY = ISLAND_TOP_Y * t
-	step.Position = Vector3.new(distanceFromCenter, stepY, 0)
-	step.Parent = rampFolder
+local PLANT_COUNT = 5
+for i = 1, PLANT_COUNT do
+	local angle = (i / PLANT_COUNT) * math.pi * 2
+	local radius = math.random() * (BEACH_CORE_RADIUS - 15)
+	local plant = Instance.new("Part")
+	plant.Name = "BeachPlant"
+	plant.Anchored = true
+	plant.CanCollide = false
+	plant.Material = Enum.Material.Grass
+	plant.Color = Color3.fromRGB(60, 120, 60)
+	plant.Size = Vector3.new(1, 2.5, 1)
+	plant.Position = Vector3.new(math.cos(angle) * radius, BEACH_TOP_Y + 1, math.sin(angle) * radius)
+	plant.Parent = beachPropsFolder
 end
 
 -- Atmosphere for a softer horizon/sky (cheap but effective realism boost).
@@ -134,7 +162,7 @@ atmosphere.Decay = Color3.fromRGB(106, 150, 168)
 atmosphere.Glare = 0.2
 atmosphere.Haze = 1.2
 
--- Shore foam: a ring of small particle emitters lapping at the island's
+-- Shore foam: a ring of small particle emitters lapping at the beach's
 -- waterline.
 local existingFoam = Workspace:FindFirstChild("ShoreFoam")
 if existingFoam then
@@ -154,7 +182,7 @@ for i = 1, FOAM_POINTS do
 	anchor.CanCollide = false
 	anchor.Transparency = 1
 	anchor.Size = Vector3.new(1, 1, 1)
-	anchor.Position = Vector3.new(math.cos(angle) * (ISLAND_RADIUS + 3), 0.3, math.sin(angle) * (ISLAND_RADIUS + 3))
+	anchor.Position = Vector3.new(math.cos(angle) * (BEACH_CORE_RADIUS + 3), 0.3, math.sin(angle) * (BEACH_CORE_RADIUS + 3))
 	anchor.Parent = foamFolder
 
 	local foam = Instance.new("ParticleEmitter")
@@ -174,7 +202,7 @@ for i = 1, FOAM_POINTS do
 	foam.Parent = anchor
 end
 
--- Underwater light dust near the island's shallow water: soft drifting
+-- Underwater light dust near the beach's shallow water: soft drifting
 -- particles standing in for sunbeams filtering through the surface.
 local existingDust = Workspace:FindFirstChild("UnderwaterLightDust")
 if existingDust then
@@ -216,7 +244,7 @@ dust.Parent = dustAnchor
 -- impression of a choppier, more varied sea.
 local Debris = game:GetService("Debris")
 
-local WHITECAP_MIN_RADIUS = ISLAND_RADIUS + 20
+local WHITECAP_MIN_RADIUS = BEACH_SHELF_RADIUS + 20
 local WHITECAP_MAX_RADIUS = 900
 local WHITECAP_MIN_INTERVAL = 1
 local WHITECAP_MAX_INTERVAL = 3
