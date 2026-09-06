@@ -18,7 +18,11 @@ treasureCollected.Name = "TreasureCollected"
 treasureCollected.Parent = script
 
 local TREASURES_PER_ZONE = 15
-local MIN_RADIUS = 60 -- studs from the world center, stay clear of the island
+-- Stay clear of the beach's carved sand terrain (dry core + submerged shelf
+-- + outer transition slope, out to 180 studs from world center -- see
+-- OceanGenerator.server.lua) so shallow Récif treasures can't spawn
+-- embedded inside it.
+local MIN_RADIUS = 200
 local MAX_RADIUS = 420
 
 local RARITY_COLORS = {

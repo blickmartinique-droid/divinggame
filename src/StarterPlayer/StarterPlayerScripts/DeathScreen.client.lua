@@ -1,9 +1,9 @@
--- Generic death/respawn overlay (blur + message + countdown). Nothing in
--- V1 currently kills the player — running out of oxygen rescues to the
--- surface instead, per the design ("le joueur ne doit pas mourir
--- instantanément") — but this is a ready fallback for any future damage
--- source (hostile creatures, harpoon, etc.). Respawn timing itself is left
--- to Roblox's default auto-respawn; this just shows/hides the overlay.
+-- Generic death/respawn overlay (blur + message + countdown). Currently
+-- triggered by running out of oxygen (OxygenManager.server.lua sets
+-- Humanoid.Health = 0 on drowning), and ready as-is for any future damage
+-- source (hostile creatures, harpoon, etc.) without changes here. Respawn
+-- timing itself is left to Roblox's default auto-respawn; this just
+-- shows/hides the overlay.
 
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")

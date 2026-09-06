@@ -304,8 +304,6 @@ local function onCharacterAdded(character)
 	local rootPart = character:WaitForChild("HumanoidRootPart")
 	local animateScript = character:WaitForChild("Animate")
 
-	humanoid.WalkSpeed = MovementConfig.BaseSwimSpeed
-
 	local animationTracks = loadSwimAnimations(character, humanoid)
 	local swimEffects = setupSwimEffects(character)
 	local depthHold = setupDepthHold(rootPart)
@@ -367,16 +365,30 @@ local function onCharacterAdded(character)
 	local heartbeatConnection
 	heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
 		if humanoid.Health <= 0 or not character.Parent then
+			-- Dying/despawning while swimming previously left PlatformStand,
+			-- AutoRotate, depthHold, and the disabled Animate script all
+			-- stuck in their "swimming" state on the corpse, since this
+			-- disconnected before ever calling exitSwimMode. Restoring them
+			-- here (only if the character still exists -- nothing to clean
+			-- up if it's already been removed) lets Roblox's normal death
+			-- ragdoll take over instead.
+			if isSwimming and character.Parent then
+				exitSwimMode()
+			end
 			heartbeatConnection:Disconnect()
 			return
 		end
 
-		local depth = DepthUtils.GetDepth(rootPart.Position)
+		-- The exit threshold gets a small upward buffer once already
+		-- swimming (see SURFACE_EXIT_BUFFER above); entering still requires
+		-- being properly underwater. Written as an explicit if/else rather
+		-- than an `and/or` one-liner, which would silently mis-evaluate
+		-- here since the "swimming" branch can itself be false.
 		local shouldSwim
 		if isSwimming then
-			shouldSwim = depth > 0 or rootPart.Position.Y < SURFACE_EXIT_BUFFER
+			shouldSwim = rootPart.Position.Y < SURFACE_EXIT_BUFFER
 		else
-			shouldSwim = depth > 0
+			shouldSwim = DepthUtils.GetDepth(rootPart.Position) > 0
 		end
 		if shouldSwim ~= isSwimming then
 			if shouldSwim then
@@ -453,6 +465,7 @@ local function onCharacterAdded(character)
 		-- alone now, so this runs unconditionally instead of trying to
 		-- guess which camera mode is active.
 		local movingBackward = isAnyKeyHeld(BACK_KEYS)
+		local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 
 		if fullVelocity.Magnitude > 0.01 then
 			-- Backward keeps facing the camera direction (a moonwalk-style
@@ -498,7 +511,6 @@ local function onCharacterAdded(character)
 
 				local yawCFrame = CFrame.new(rootPart.Position, rootPart.Position + yawSourceDirection)
 				local targetCFrame = yawCFrame * CFrame.Angles(pitch, 0, 0)
-				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 				rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 			end
 		else
@@ -515,7 +527,6 @@ local function onCharacterAdded(character)
 			local restRight = flattenAndNormalize(rootPart.CFrame.RightVector)
 			if restRight.Magnitude > 0.01 then
 				local restCFrame = CFrame.fromMatrix(rootPart.Position, restRight, Vector3.new(0, 1, 0))
-				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 				rootPart.CFrame = rootPart.CFrame:Lerp(restCFrame, turnAlpha)
 			end
 		end

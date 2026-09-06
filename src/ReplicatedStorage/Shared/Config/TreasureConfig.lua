@@ -1,8 +1,8 @@
 -- Treasure types for V1. Rarity affects spawn weight (higher weight = more
 -- common) within a zone; value is added to Coins when sold at the surface
 -- (a later step). MinZoneIndex is the earliest zone (1=Récif, 2=Grottes,
--- 3=Épave, 4=Abysses, matching ZonesConfig.Zones order) this type can spawn
--- in, so better loot unlocks progressively with depth.
+-- 3=Épave, 4=Entrée de l'abysse, matching ZonesConfig.Zones order) this
+-- type can spawn in, so better loot unlocks progressively with depth.
 
 return {
 	Types = {
