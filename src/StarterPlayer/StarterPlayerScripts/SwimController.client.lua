@@ -6,6 +6,18 @@
 -- drives 100% of the character's motion: horizontal (camera-relative
 -- WASD/ZQSD), vertical (Space/LeftControl/C), facing direction, and swim
 -- animations.
+--
+-- Orientation is driven by the SAME 3D direction the physics actually
+-- moves the character in (horizontal WASD direction blended with the
+-- vertical Space/Ctrl speed), not by an artificial fixed tilt. The body
+-- pitches its nose up while ascending and down while descending, with a
+-- small constant "prone" dip even on level swimming so it reads as
+-- swimming rather than walking. The pitch angle is deliberately capped
+-- well short of 90 degrees: pushing it that far is what previously sent
+-- the character's facing sideways or straight up at the sky, since the
+-- Look vector's horizontal component (the part that visually reads as
+-- "facing the way you're going") shrinks to nothing as pitch approaches
+-- vertical.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -34,7 +46,20 @@ local ANIMATION_PLAYBACK_SPEEDS = {
 	Forward = 0.4,
 	Backward = 0.25,
 }
-local SWIM_LEAN_ANGLE = math.rad(75) -- tilts the body into a horizontal "lying" swim pose
+
+-- Pitch (nose up/down), not roll: real swim posture comes from tilting the
+-- body's forward tilt to match actual vertical motion, capped well below 90
+-- degrees so the character always keeps a clearly readable horizontal
+-- facing. FORWARD/BACKWARD_BASE_PITCH give a constant mild dip/recline even
+-- when swimming perfectly level (so it reads as swimming, not walking);
+-- VERTICAL_PITCH_RANGE is how much further ascending/descending tilts the
+-- nose up/down; MAX_SWIM_PITCH is the hard ceiling on the combined angle.
+-- Positive pitch tilts the nose up, negative tilts it down (CFrame.Angles
+-- rotates Look toward +Y for a positive X-angle).
+local FORWARD_BASE_PITCH = math.rad(-20) -- slight nose-down dip, swimming prone
+local BACKWARD_BASE_PITCH = math.rad(20) -- slight nose-up recline, floating on back
+local VERTICAL_PITCH_RANGE = math.rad(45)
+local MAX_SWIM_PITCH = math.rad(65)
 
 local heldKeys = {}
 
@@ -335,28 +360,35 @@ local function onCharacterAdded(character)
 		local movingBackward = isAnyKeyHeld(BACK_KEYS)
 
 		if not shiftLockActive and fullVelocity.Magnitude > 0.01 then
-			-- Backward keeps facing the camera direction and leans back
-			-- (backstroke-style) instead of spinning around to dive
-			-- head-first the way forward movement does.
-			local yawSourceDirection = movingBackward and flatLook or flattenAndNormalize(fullVelocity)
-			local leanAngle = movingBackward and SWIM_LEAN_ANGLE or -SWIM_LEAN_ANGLE
+			-- Backward keeps facing the camera direction (a moonwalk-style
+			-- backstroke) instead of spinning around to face the way it's
+			-- actually traveling; forward faces the actual horizontal move
+			-- direction. Falls back to the camera's facing when there's no
+			-- horizontal input at all (e.g. holding only Space/Ctrl to move
+			-- straight up or down), so vertical-only movement still has a
+			-- sensible yaw instead of freezing the last one.
+			local yawSourceDirection = movingBackward and flatLook or moveDirection
+			if yawSourceDirection.Magnitude < 0.01 then
+				yawSourceDirection = flatLook
+			end
 
 			if yawSourceDirection.Magnitude > 0.01 then
-				-- Built by rotating the Right/Up basis vectors directly
-				-- (instead of composing CFrame.Angles calls) so the Look
-				-- vector is guaranteed, by construction, to stay exactly
-				-- yawSourceDirection no matter the tilt angle. Composed
-				-- Euler angles were fragile here: getting the axis order
-				-- wrong by even one call is what previously sent the
-				-- character's facing sideways, and then up toward the sky,
-				-- instead of tilting the body while keeping the face
-				-- pointed the way it's actually swimming.
-				local facingCFrame = CFrame.new(rootPart.Position, rootPart.Position + yawSourceDirection)
-				local right = facingCFrame.RightVector
-				local up = facingCFrame.UpVector
-				local rolledRight = right * math.cos(leanAngle) + up * math.sin(leanAngle)
-				local rolledUp = up * math.cos(leanAngle) - right * math.sin(leanAngle)
-				local targetCFrame = CFrame.fromMatrix(rootPart.Position, rolledRight, rolledUp)
+				-- Vertical speed is a discrete +/-VerticalSwimSpeed/0, so this
+				-- resolves to a clean -1/0/1 blend between the base pitch and
+				-- the extra ascend/descend tilt.
+				local verticalFraction = verticalSpeed / MovementConfig.VerticalSwimSpeed
+				local basePitch = movingBackward and BACKWARD_BASE_PITCH or FORWARD_BASE_PITCH
+				local pitch = basePitch + verticalFraction * VERTICAL_PITCH_RANGE
+				pitch = math.clamp(pitch, -MAX_SWIM_PITCH, MAX_SWIM_PITCH)
+
+				-- Establish yaw first (Look = yawSourceDirection, purely
+				-- horizontal), then pitch around that CFrame's own Right
+				-- axis. Because pitch stays well under 90 degrees, Look
+				-- always keeps most of its horizontal component, so the
+				-- character never loses its readable facing direction the
+				-- way the old +/-75-90 degree tilts did.
+				local yawCFrame = CFrame.new(rootPart.Position, rootPart.Position + yawSourceDirection)
+				local targetCFrame = yawCFrame * CFrame.Angles(pitch, 0, 0)
 				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 				rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 			end
