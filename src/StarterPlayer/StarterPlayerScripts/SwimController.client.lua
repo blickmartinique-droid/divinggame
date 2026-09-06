@@ -393,17 +393,24 @@ local function onCharacterAdded(character)
 		local flatLook = flattenAndNormalize(camera.CFrame.LookVector)
 		local flatRight = flattenAndNormalize(camera.CFrame.RightVector)
 
-		-- Forward/back use the camera's FULL look direction (including its
-		-- pitch), not the flattened one: looking up while swimming forward
-		-- now climbs, looking down dives, exactly like a diver swimming the
-		-- way they're looking. Strafing (A/D) stays purely horizontal --
-		-- camera pitch shouldn't push sideways movement up or down.
+		-- Forward uses the camera's FULL look direction (including its pitch),
+		-- not the flattened one: looking up while swimming forward now climbs,
+		-- looking down dives, exactly like a diver swimming the way they're
+		-- looking. Backward intentionally stays horizontal-only (flatLook):
+		-- it's a moonwalk-style backstroke facing the camera, not a "swim
+		-- where you look" motion, and the default third-person camera looks
+		-- slightly DOWN at the character -- using the full LookVector here
+		-- would flip that into an unintended upward push every time the
+		-- player swims backward (-LookVector's Y turns positive), which was
+		-- nudging the character above the surface. Strafing (A/D) also stays
+		-- purely horizontal -- camera pitch shouldn't push sideways movement
+		-- up or down.
 		local moveDirection3D = Vector3.new()
 		if isAnyKeyHeld(FORWARD_KEYS) then
 			moveDirection3D += camera.CFrame.LookVector
 		end
 		if isAnyKeyHeld(BACK_KEYS) then
-			moveDirection3D -= camera.CFrame.LookVector
+			moveDirection3D -= flatLook
 		end
 		if isAnyKeyHeld(RIGHT_KEYS) then
 			moveDirection3D += flatRight
