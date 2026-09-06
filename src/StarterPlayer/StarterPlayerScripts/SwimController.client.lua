@@ -342,22 +342,21 @@ local function onCharacterAdded(character)
 			local leanAngle = movingBackward and SWIM_LEAN_ANGLE or -SWIM_LEAN_ANGLE
 
 			if yawSourceDirection.Magnitude > 0.01 then
-				-- Built from explicit yaw-then-roll angles rather than
-				-- CFrame.new(pos, lookAt) each frame, which was sensitive to
-				-- tiny per-frame direction jitter and made the character
-				-- visibly wobble once tilted onto its side.
-				--
-				-- The tilt is a ROLL (rotation around the Look axis), not a
-				-- PITCH (rotation around the Right axis): rolling leaves the
-				-- Look vector untouched, so the character keeps facing
-				-- exactly yawSourceDirection while still laying the body
-				-- horizontal. A pitch would drag the face away from the
-				-- travel direction toward straight up/down, which is what
-				-- made the swimmer look like it was facing sideways.
-				local yaw = math.atan2(-yawSourceDirection.X, -yawSourceDirection.Z)
-				local targetCFrame = CFrame.new(rootPart.Position)
-					* CFrame.Angles(0, yaw, 0)
-					* CFrame.Angles(0, 0, leanAngle)
+				-- Built by rotating the Right/Up basis vectors directly
+				-- (instead of composing CFrame.Angles calls) so the Look
+				-- vector is guaranteed, by construction, to stay exactly
+				-- yawSourceDirection no matter the tilt angle. Composed
+				-- Euler angles were fragile here: getting the axis order
+				-- wrong by even one call is what previously sent the
+				-- character's facing sideways, and then up toward the sky,
+				-- instead of tilting the body while keeping the face
+				-- pointed the way it's actually swimming.
+				local facingCFrame = CFrame.new(rootPart.Position, rootPart.Position + yawSourceDirection)
+				local right = facingCFrame.RightVector
+				local up = facingCFrame.UpVector
+				local rolledRight = right * math.cos(leanAngle) + up * math.sin(leanAngle)
+				local rolledUp = up * math.cos(leanAngle) - right * math.sin(leanAngle)
+				local targetCFrame = CFrame.fromMatrix(rootPart.Position, rolledRight, rolledUp)
 				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 				rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 			end
