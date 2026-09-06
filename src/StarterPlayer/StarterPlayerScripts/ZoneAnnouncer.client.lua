@@ -1,9 +1,11 @@
--- Announces the current depth zone (Récif/Grottes/Épave/Abysses) with a
--- fade-in/out banner when the player crosses into it, and smoothly tweens
--- Lighting fog/brightness and Atmosphere haze to match — each zone reads
--- progressively darker and murkier with depth. Purely client-local (each
--- player's own Lighting override), driven by the same DepthUtils/ZonesConfig
--- used by the server's authoritative depth tracking.
+-- Announces the current depth zone (Récif/Grottes/Épave/Entrée de l'abysse)
+-- with a fade-in/out banner when the player crosses into it, and
+-- continuously blends Lighting fog/brightness/ambient and Atmosphere haze
+-- to match the player's exact depth -- not just snapping at each zone
+-- boundary, so the whole 0-500m range reads as one smooth gradient from
+-- bright reef to near-black abyss. Purely client-local (each player's own
+-- Lighting override), driven by the same DepthUtils/ZonesConfig used by the
+-- server's authoritative depth tracking.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,20 +14,13 @@ local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
+local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 
 local player = Players.LocalPlayer
 
-local ATMOSPHERE_TWEEN_TIME = 2
 local BANNER_FADE_IN = 0.6
 local BANNER_HOLD = 2
 local BANNER_FADE_OUT = 0.8
-
-local SURFACE_VISUALS = {
-	FogColor = Color3.fromRGB(120, 170, 180),
-	FogEnd = 1500,
-	Brightness = 3,
-	AtmosphereHaze = 1.2,
-}
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ZoneAnnouncer"
@@ -59,17 +54,44 @@ local function getAtmosphere()
 	end
 	return atmosphere
 end
+local atmosphere = getAtmosphere()
 
-local function tweenVisuals(visuals)
-	local atmosphere = getAtmosphere()
-	TweenService:Create(Lighting, TweenInfo.new(ATMOSPHERE_TWEEN_TIME), {
-		FogColor = visuals.FogColor,
-		FogEnd = visuals.FogEnd,
-		Brightness = visuals.Brightness,
-	}):Play()
-	TweenService:Create(atmosphere, TweenInfo.new(ATMOSPHERE_TWEEN_TIME), {
-		Haze = visuals.AtmosphereHaze,
-	}):Play()
+-- Blends zone[i]'s own visuals (its state at zone[i].MinDepth) toward
+-- zone[i+1]'s as depth moves between their MinDepths, so the environment
+-- changes gradually across the whole range instead of jumping the instant
+-- a boundary is crossed. Depths at or past the last zone's MinDepth just
+-- hold that zone's values (it's the final tier).
+local function computeVisualsAtDepth(depth: number)
+	local zones = ZonesConfig.Zones
+	if depth <= zones[1].MinDepth then
+		return zones[1]
+	end
+
+	for i = 1, #zones - 1 do
+		local current, nextZone = zones[i], zones[i + 1]
+		if depth < nextZone.MinDepth then
+			local t = (depth - current.MinDepth) / (nextZone.MinDepth - current.MinDepth)
+			return {
+				FogColor = current.FogColor:Lerp(nextZone.FogColor, t),
+				FogEnd = current.FogEnd + (nextZone.FogEnd - current.FogEnd) * t,
+				Brightness = current.Brightness + (nextZone.Brightness - current.Brightness) * t,
+				AtmosphereHaze = current.AtmosphereHaze + (nextZone.AtmosphereHaze - current.AtmosphereHaze) * t,
+				Ambient = current.Ambient:Lerp(nextZone.Ambient, t),
+				OutdoorAmbient = current.OutdoorAmbient:Lerp(nextZone.OutdoorAmbient, t),
+			}
+		end
+	end
+
+	return zones[#zones]
+end
+
+local function applyVisuals(visuals)
+	Lighting.FogColor = visuals.FogColor
+	Lighting.FogEnd = visuals.FogEnd
+	Lighting.Brightness = visuals.Brightness
+	Lighting.Ambient = visuals.Ambient
+	Lighting.OutdoorAmbient = visuals.OutdoorAmbient
+	atmosphere.Haze = visuals.AtmosphereHaze
 end
 
 local function announceZone(zone)
@@ -98,17 +120,16 @@ local function onCharacterAdded(character)
 		end
 
 		local depth = DepthUtils.GetDepth(rootPart.Position)
+		applyVisuals(computeVisualsAtDepth(depth))
 
 		if depth > 0 then
 			local zone = DepthUtils.GetZoneForDepth(depth)
 			if zone.Name ~= currentZoneName then
 				currentZoneName = zone.Name
 				announceZone(zone)
-				tweenVisuals(zone)
 			end
-		elseif currentZoneName ~= nil then
+		else
 			currentZoneName = nil
-			tweenVisuals(SURFACE_VISUALS)
 		end
 	end)
 end

@@ -51,22 +51,29 @@ local floorMin = Vector3.new(-OCEAN_WIDTH / 2, SURFACE_Y - maxDepth - FLOOR_THIC
 local floorSize = Vector3.new(OCEAN_WIDTH, FLOOR_THICKNESS, OCEAN_WIDTH)
 fillChunked(floorMin, floorSize, Enum.Material.Rock)
 
--- Visual tuning: default Terrain water looks flat and murky. A vivid
--- turquoise with strong waves and sun reflectance goes for a bright,
--- lively open-ocean look (Sea of Thieves-ish) rather than a puddle.
-terrain.WaterColor = Color3.fromRGB(15, 118, 130)
+-- Visual tuning: default Terrain water looks flat and murky. A deep
+-- blue-teal with moderate waves and reflectance reads as an actual ocean
+-- rather than a puddle, without tipping into a neon/artificial look --
+-- these properties are global to the whole Terrain (shared by every
+-- player), so the per-depth darkening is handled separately by
+-- ZoneAnnouncer's Lighting/Atmosphere/fog, not by changing water color.
+terrain.WaterColor = Color3.fromRGB(10, 80, 95)
 terrain.WaterTransparency = 0.35
-terrain.WaterReflectance = 0.3
+terrain.WaterReflectance = 0.18
 terrain.WaterWaveSize = 0.45
 terrain.WaterWaveSpeed = 12
 
+-- Matches ZonesConfig's Récif entry exactly (depth 0's anchor point), so
+-- there's no visual seam between this one-time default and the continuous
+-- depth-based lighting ZoneAnnouncer takes over as soon as a character
+-- exists.
 local Lighting = game:GetService("Lighting")
 Lighting.ClockTime = 14
 Lighting.Brightness = 3
 Lighting.Ambient = Color3.fromRGB(70, 90, 100)
 Lighting.OutdoorAmbient = Color3.fromRGB(130, 160, 170)
-Lighting.FogColor = Color3.fromRGB(120, 170, 180)
-Lighting.FogEnd = 1500
+Lighting.FogColor = Color3.fromRGB(110, 155, 165)
+Lighting.FogEnd = 850
 
 -- Natural beach at sea level, replacing the earlier raised floating island.
 -- A dry sand core (where the player spawns) pokes just above the waterline,
