@@ -4,7 +4,7 @@
 -- animation for it.
 
 return {
-	Idle = "rbxassetid://138464368236764",
+	Idle = "rbxassetid://70446602902099",
 	Backward = "rbxassetid://121324014130406",
 	Forward = "rbxassetid://138297722607060",
 }
