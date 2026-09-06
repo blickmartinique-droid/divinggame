@@ -9,15 +9,14 @@
 --
 -- Orientation is driven by the SAME 3D direction the physics actually
 -- moves the character in (horizontal WASD direction blended with the
--- vertical Space/Ctrl speed), not by an artificial fixed tilt. The body
--- pitches its nose up while ascending and down while descending, with a
--- small constant "prone" dip even on level swimming so it reads as
--- swimming rather than walking. The pitch angle is deliberately capped
--- well short of 90 degrees: pushing it that far is what previously sent
--- the character's facing sideways or straight up at the sky, since the
--- Look vector's horizontal component (the part that visually reads as
--- "facing the way you're going") shrinks to nothing as pitch approaches
--- vertical.
+-- vertical Space/Ctrl speed), not by an artificial fixed tilt. While
+-- swimming forward, the pitch is solved so the body's head-to-feet axis
+-- points exactly along the real velocity vector -- level swimming reads
+-- as a fully horizontal "torpedo" body with the head leading, and
+-- swimming up/down banks the body to match, proportionally, with no
+-- separate hand-tuned angle. Backward keeps a smaller, fixed recline
+-- (a floating-on-back look) since it isn't meant to mirror forward's
+-- full dive.
 --
 -- This script is the SOLE owner of the character's rotation while
 -- swimming. Humanoid.AutoRotate is explicitly disabled in enterSwimMode
@@ -28,6 +27,13 @@
 -- and the character's body facing (set here) are intentionally
 -- independent: the camera is free to look anywhere without ever
 -- rotating the body itself.
+--
+-- AssemblyAngularVelocity is zeroed every frame while swimming, separate
+-- from all of the above: a PlatformStand part is still simulated by the
+-- physics engine (bumping the terrain/water can impart spin), and
+-- nothing else ever damps that rotation. Left alone it never decays, so
+-- the character would slowly turn in place forever even while sitting
+-- completely idle with no rotation code running at all.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -57,16 +63,9 @@ local ANIMATION_PLAYBACK_SPEEDS = {
 	Backward = 0.25,
 }
 
--- Pitch (nose up/down), not roll: real swim posture comes from tilting the
--- body's forward tilt to match actual vertical motion, capped well below 90
--- degrees so the character always keeps a clearly readable horizontal
--- facing. FORWARD/BACKWARD_BASE_PITCH give a constant mild dip/recline even
--- when swimming perfectly level (so it reads as swimming, not walking);
--- VERTICAL_PITCH_RANGE is how much further ascending/descending tilts the
--- nose up/down; MAX_SWIM_PITCH is the hard ceiling on the combined angle.
--- Positive pitch tilts the nose up, negative tilts it down (CFrame.Angles
--- rotates Look toward +Y for a positive X-angle).
-local FORWARD_BASE_PITCH = math.rad(-20) -- slight nose-down dip, swimming prone
+-- Backward-only pitch tuning (see the forward branch in the movement loop
+-- for how forward's pitch is computed instead -- directly from the real
+-- velocity angle, not from constants like these).
 local BACKWARD_BASE_PITCH = math.rad(20) -- slight nose-up recline, floating on back
 local VERTICAL_PITCH_RANGE = math.rad(45)
 local MAX_SWIM_PITCH = math.rad(65)
@@ -368,6 +367,10 @@ local function onCharacterAdded(character)
 		local horizontalVelocity = moveDirection * MovementConfig.BaseSwimSpeed
 		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
 		rootPart.AssemblyLinearVelocity = fullVelocity
+		-- See the AssemblyAngularVelocity note near the top of this file:
+		-- unrelated to AutoRotate, this stops leftover physics spin (e.g.
+		-- from bumping terrain) from turning the character in place forever.
+		rootPart.AssemblyAngularVelocity = Vector3.new()
 
 		-- With AutoRotate disabled (see enterSwimMode), this script is the
 		-- ONLY system that ever rotates the character while swimming --
@@ -390,20 +393,31 @@ local function onCharacterAdded(character)
 			end
 
 			if yawSourceDirection.Magnitude > 0.01 then
-				-- Vertical speed is a discrete +/-VerticalSwimSpeed/0, so this
-				-- resolves to a clean -1/0/1 blend between the base pitch and
-				-- the extra ascend/descend tilt.
-				local verticalFraction = verticalSpeed / MovementConfig.VerticalSwimSpeed
-				local basePitch = movingBackward and BACKWARD_BASE_PITCH or FORWARD_BASE_PITCH
-				local pitch = basePitch + verticalFraction * VERTICAL_PITCH_RANGE
-				pitch = math.clamp(pitch, -MAX_SWIM_PITCH, MAX_SWIM_PITCH)
+				local pitch
+				if movingBackward then
+					-- Unchanged: a small fixed recline, nudged further by
+					-- ascend/descend, capped well under 90 degrees.
+					local verticalFraction = verticalSpeed / MovementConfig.VerticalSwimSpeed
+					pitch = BACKWARD_BASE_PITCH + verticalFraction * VERTICAL_PITCH_RANGE
+					pitch = math.clamp(pitch, -MAX_SWIM_PITCH, MAX_SWIM_PITCH)
+				else
+					-- Forward: solve for the pitch that puts the body's Up
+					-- axis (head-to-feet) exactly along the real velocity
+					-- direction, instead of a fixed dip. elevationAngle is
+					-- the actual angle of travel above/below horizontal (0
+					-- = level, +90 = straight up, -90 = straight down);
+					-- subtracting 90 degrees is the exact pitch that aligns
+					-- Up with that direction. Level swimming (elevation 0)
+					-- lands on pitch = -90, a fully horizontal torpedo body
+					-- with the head leading -- not a small tilt -- and
+					-- ascending/descending smoothly reduces or extends that
+					-- as the real velocity angle changes. No clamp needed:
+					-- the formula is bounded to [-180, 0] by construction.
+					local horizontalSpeed = horizontalVelocity.Magnitude
+					local elevationAngle = math.atan2(verticalSpeed, horizontalSpeed)
+					pitch = elevationAngle - math.pi / 2
+				end
 
-				-- Establish yaw first (Look = yawSourceDirection, purely
-				-- horizontal), then pitch around that CFrame's own Right
-				-- axis. Because pitch stays well under 90 degrees, Look
-				-- always keeps most of its horizontal component, so the
-				-- character never loses its readable facing direction the
-				-- way the old +/-75-90 degree tilts did.
 				local yawCFrame = CFrame.new(rootPart.Position, rootPart.Position + yawSourceDirection)
 				local targetCFrame = yawCFrame * CFrame.Angles(pitch, 0, 0)
 				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
