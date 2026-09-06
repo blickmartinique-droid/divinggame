@@ -34,6 +34,14 @@
 -- nothing else ever damps that rotation. Left alone it never decays, so
 -- the character would slowly turn in place forever even while sitting
 -- completely idle with no rotation code running at all.
+--
+-- Depth holding while idle uses a LinearVelocity constraint (depthHold),
+-- not just the AssemblyLinearVelocity write below: resetting Y velocity
+-- to 0 once per Heartbeat still lets gravity integrate downward in the
+-- gaps between frames (a small sawtooth that averages out to a steady
+-- sink). depthHold enforces the same target Y velocity continuously
+-- inside the physics solver instead, with zero force on X/Z so it never
+-- touches horizontal movement.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -254,6 +262,32 @@ local function setSwimEffectsActive(effects, active)
 	end
 end
 
+-- Resetting AssemblyLinearVelocity.Y once per Heartbeat isn't enough to
+-- cancel gravity: the physics engine keeps integrating gravity between our
+-- writes, so the character still drifts down on average (a "sawtooth"
+-- velocity -- reset to 0, pulled down again, reset to 0...). A LinearVelocity
+-- constraint holds a target velocity continuously inside the physics solver
+-- itself, so it cancels gravity every step instead of once per frame.
+-- ForceLimitMode.PerAxis with zero force on X/Z keeps it from touching
+-- horizontal movement at all -- only Y is affected.
+local function setupDepthHold(rootPart)
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "SwimDepthHoldAttachment"
+	attachment.Parent = rootPart
+
+	local depthHold = Instance.new("LinearVelocity")
+	depthHold.Name = "SwimDepthHold"
+	depthHold.Attachment0 = attachment
+	depthHold.RelativeTo = Enum.ActuatorRelativeTo.World
+	depthHold.ForceLimitMode = Enum.ForceLimitMode.PerAxis
+	depthHold.MaxAxesForce = Vector3.new(0, math.huge, 0)
+	depthHold.VectorVelocity = Vector3.new()
+	depthHold.Enabled = false
+	depthHold.Parent = rootPart
+
+	return depthHold
+end
+
 local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	local rootPart = character:WaitForChild("HumanoidRootPart")
@@ -263,6 +297,7 @@ local function onCharacterAdded(character)
 
 	local animationTracks = loadSwimAnimations(character, humanoid)
 	local swimEffects = setupSwimEffects(character)
+	local depthHold = setupDepthHold(rootPart)
 	local isSwimming = false
 	local currentSwimState = nil
 
@@ -300,6 +335,7 @@ local function onCharacterAdded(character)
 		-- result was visible camera/character shaking. Disabling AutoRotate
 		-- hands rotation exclusively to this script, in every camera mode.
 		humanoid.AutoRotate = false
+		depthHold.Enabled = true
 		if swimEffects.splash then
 			swimEffects.splash:Emit(20)
 		end
@@ -309,6 +345,7 @@ local function onCharacterAdded(character)
 		isSwimming = false
 		humanoid.PlatformStand = false
 		humanoid.AutoRotate = true
+		depthHold.Enabled = false
 		animateScript.Disabled = false
 		stopSwimAnimations()
 		if swimEffects.splash then
@@ -367,6 +404,11 @@ local function onCharacterAdded(character)
 		local horizontalVelocity = moveDirection * MovementConfig.BaseSwimSpeed
 		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
 		rootPart.AssemblyLinearVelocity = fullVelocity
+		-- depthHold (a LinearVelocity constraint, Y axis only) is what
+		-- actually holds the vertical speed against gravity between frames;
+		-- this AssemblyLinearVelocity write still sets the same Y target
+		-- once per Heartbeat as before, the two simply agree.
+		depthHold.VectorVelocity = Vector3.new(0, verticalSpeed, 0)
 		-- See the AssemblyAngularVelocity note near the top of this file:
 		-- unrelated to AutoRotate, this stops leftover physics spin (e.g.
 		-- from bumping terrain) from turning the character in place forever.
