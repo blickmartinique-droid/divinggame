@@ -3,20 +3,23 @@
 -- gravity, jumping) is left alone. Underwater, Roblox's built-in ground-
 -- follow logic would otherwise cancel any vertical velocity we set, so
 -- PlatformStand fully disables the built-in controller and this script
--- drives 100% of the character's motion: horizontal (camera-relative
--- WASD/ZQSD), vertical (Space/LeftControl/C), facing direction, and swim
--- animations.
+-- drives 100% of the character's motion: horizontal + camera-pitch-driven
+-- vertical (W/S follow the camera's full look direction, A/D stay
+-- horizontal), an additional manual vertical control (Space/LeftControl/C),
+-- facing direction, and swim animations.
 --
 -- Orientation is driven by the SAME 3D direction the physics actually
--- moves the character in (horizontal WASD direction blended with the
--- vertical Space/Ctrl speed), not by an artificial fixed tilt. While
--- swimming forward, the pitch is solved so the body's head-to-feet axis
--- points exactly along the real velocity vector -- level swimming reads
--- as a fully horizontal "torpedo" body with the head leading, and
--- swimming up/down banks the body to match, proportionally, with no
--- separate hand-tuned angle. Backward keeps a smaller, fixed recline
--- (a floating-on-back look) since it isn't meant to mirror forward's
--- full dive.
+-- moves the character in (the combined camera-look + manual-vertical
+-- velocity), not by an artificial fixed tilt. While swimming forward, the
+-- pitch is solved so the body's head-to-feet axis points exactly along the
+-- real velocity vector -- level swimming reads as a fully horizontal
+-- "torpedo" body with the head leading, and looking/swimming up or down
+-- banks the body to match, proportionally, with no separate hand-tuned
+-- angle. Backward keeps a smaller, fixed recline (a floating-on-back look)
+-- since it isn't meant to mirror forward's full dive. The moment there's no
+-- input at all, the character smoothly levels back out to a vertical rest
+-- pose instead of staying frozen mid-tilt (see the Idle branch in the
+-- movement loop).
 --
 -- This script is the SOLE owner of the character's rotation while
 -- swimming. Humanoid.AutoRotate is explicitly disabled in enterSwimMode
@@ -376,39 +379,48 @@ local function onCharacterAdded(character)
 		local flatLook = flattenAndNormalize(camera.CFrame.LookVector)
 		local flatRight = flattenAndNormalize(camera.CFrame.RightVector)
 
-		local moveDirection = Vector3.new()
+		-- Forward/back use the camera's FULL look direction (including its
+		-- pitch), not the flattened one: looking up while swimming forward
+		-- now climbs, looking down dives, exactly like a diver swimming the
+		-- way they're looking. Strafing (A/D) stays purely horizontal --
+		-- camera pitch shouldn't push sideways movement up or down.
+		local moveDirection3D = Vector3.new()
 		if isAnyKeyHeld(FORWARD_KEYS) then
-			moveDirection += flatLook
+			moveDirection3D += camera.CFrame.LookVector
 		end
 		if isAnyKeyHeld(BACK_KEYS) then
-			moveDirection -= flatLook
+			moveDirection3D -= camera.CFrame.LookVector
 		end
 		if isAnyKeyHeld(RIGHT_KEYS) then
-			moveDirection += flatRight
+			moveDirection3D += flatRight
 		end
 		if isAnyKeyHeld(LEFT_KEYS) then
-			moveDirection -= flatRight
+			moveDirection3D -= flatRight
 		end
-		if moveDirection.Magnitude > 0 then
-			moveDirection = moveDirection.Unit
+		if moveDirection3D.Magnitude > 0 then
+			moveDirection3D = moveDirection3D.Unit
 		end
 
-		local verticalSpeed = 0
+		-- Space/Ctrl remain available as a manual, additive vertical control
+		-- on top of whatever camera-pitch-driven vertical speed W/S already
+		-- produced above.
+		local manualVerticalSpeed = 0
 		if isAnyKeyHeld(ASCEND_KEYS) then
-			verticalSpeed += MovementConfig.VerticalSwimSpeed
+			manualVerticalSpeed += MovementConfig.VerticalSwimSpeed
 		end
 		if isAnyKeyHeld(DESCEND_KEYS) then
-			verticalSpeed -= MovementConfig.VerticalSwimSpeed
+			manualVerticalSpeed -= MovementConfig.VerticalSwimSpeed
 		end
 
-		local horizontalVelocity = moveDirection * MovementConfig.BaseSwimSpeed
-		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
+		local fullVelocity = moveDirection3D * MovementConfig.BaseSwimSpeed + Vector3.new(0, manualVerticalSpeed, 0)
 		rootPart.AssemblyLinearVelocity = fullVelocity
 		-- depthHold (a LinearVelocity constraint, Y axis only) is what
 		-- actually holds the vertical speed against gravity between frames;
 		-- this AssemblyLinearVelocity write still sets the same Y target
-		-- once per Heartbeat as before, the two simply agree.
-		depthHold.VectorVelocity = Vector3.new(0, verticalSpeed, 0)
+		-- once per Heartbeat as before, the two simply agree. Uses the real
+		-- combined Y (camera-pitch-driven + manual) so holding a climb/dive
+		-- from looking up/down is just as stable as holding Space/Ctrl.
+		depthHold.VectorVelocity = Vector3.new(0, fullVelocity.Y, 0)
 		-- See the AssemblyAngularVelocity note near the top of this file:
 		-- unrelated to AutoRotate, this stops leftover physics spin (e.g.
 		-- from bumping terrain) from turning the character in place forever.
@@ -425,11 +437,12 @@ local function onCharacterAdded(character)
 			-- Backward keeps facing the camera direction (a moonwalk-style
 			-- backstroke) instead of spinning around to face the way it's
 			-- actually traveling; forward faces the actual horizontal move
-			-- direction. Falls back to the camera's facing when there's no
-			-- horizontal input at all (e.g. holding only Space/Ctrl to move
-			-- straight up or down), so vertical-only movement still has a
+			-- direction (yaw only -- pitch is handled separately below).
+			-- Falls back to the camera's facing when there's no horizontal
+			-- input at all (e.g. holding only Space/Ctrl, or looking
+			-- straight up/down), so vertical-only movement still has a
 			-- sensible yaw instead of freezing the last one.
-			local yawSourceDirection = movingBackward and flatLook or moveDirection
+			local yawSourceDirection = movingBackward and flatLook or flattenAndNormalize(moveDirection3D)
 			if yawSourceDirection.Magnitude < 0.01 then
 				yawSourceDirection = flatLook
 			end
@@ -438,8 +451,9 @@ local function onCharacterAdded(character)
 				local pitch
 				if movingBackward then
 					-- Unchanged: a small fixed recline, nudged further by
-					-- ascend/descend, capped well under 90 degrees.
-					local verticalFraction = verticalSpeed / MovementConfig.VerticalSwimSpeed
+					-- the real combined vertical speed, capped well under
+					-- 90 degrees.
+					local verticalFraction = fullVelocity.Y / MovementConfig.VerticalSwimSpeed
 					pitch = BACKWARD_BASE_PITCH + verticalFraction * VERTICAL_PITCH_RANGE
 					pitch = math.clamp(pitch, -MAX_SWIM_PITCH, MAX_SWIM_PITCH)
 				else
@@ -452,11 +466,12 @@ local function onCharacterAdded(character)
 					-- Up with that direction. Level swimming (elevation 0)
 					-- lands on pitch = -90, a fully horizontal torpedo body
 					-- with the head leading -- not a small tilt -- and
-					-- ascending/descending smoothly reduces or extends that
-					-- as the real velocity angle changes. No clamp needed:
-					-- the formula is bounded to [-180, 0] by construction.
-					local horizontalSpeed = horizontalVelocity.Magnitude
-					local elevationAngle = math.atan2(verticalSpeed, horizontalSpeed)
+					-- looking/swimming up or down (camera pitch and/or
+					-- Space/Ctrl) smoothly reduces or extends that as the
+					-- real velocity angle changes. No clamp needed: the
+					-- formula is bounded to [-180, 0] by construction.
+					local horizontalSpeed = Vector3.new(fullVelocity.X, 0, fullVelocity.Z).Magnitude
+					local elevationAngle = math.atan2(fullVelocity.Y, horizontalSpeed)
 					pitch = elevationAngle - math.pi / 2
 				end
 
@@ -465,14 +480,29 @@ local function onCharacterAdded(character)
 				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 				rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 			end
+		else
+			-- Idle: nothing above touches rotation once movement stops, so
+			-- without this the character stayed frozen in whatever tilt it
+			-- last had -- including flat on its side after swimming level,
+			-- since level swimming's pitch is a full -90 degrees. Smoothly
+			-- levels back out to a vertical, natural diver rest pose while
+			-- keeping the same horizontal facing. The Right vector is used
+			-- (rather than Look) because it stays horizontal no matter the
+			-- current pitch -- Look degenerates toward straight up/down
+			-- exactly when the body is lying flat, which is the case this
+			-- needs to recover from.
+			local restRight = flattenAndNormalize(rootPart.CFrame.RightVector)
+			if restRight.Magnitude > 0.01 then
+				local restCFrame = CFrame.fromMatrix(rootPart.Position, restRight, Vector3.new(0, 1, 0))
+				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
+				rootPart.CFrame = rootPart.CFrame:Lerp(restCFrame, turnAlpha)
+			end
 		end
-
-		local isMoving = moveDirection.Magnitude > 0 or verticalSpeed ~= 0
 
 		local targetState
 		if movingBackward then
 			targetState = "Backward"
-		elseif isMoving then
+		elseif fullVelocity.Magnitude > 0.01 then
 			targetState = "Forward"
 		else
 			targetState = "Idle"
