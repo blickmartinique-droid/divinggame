@@ -342,14 +342,22 @@ local function onCharacterAdded(character)
 			local leanAngle = movingBackward and SWIM_LEAN_ANGLE or -SWIM_LEAN_ANGLE
 
 			if yawSourceDirection.Magnitude > 0.01 then
-				-- Built from explicit yaw-then-pitch angles rather than
+				-- Built from explicit yaw-then-roll angles rather than
 				-- CFrame.new(pos, lookAt) each frame, which was sensitive to
 				-- tiny per-frame direction jitter and made the character
 				-- visibly wobble once tilted onto its side.
+				--
+				-- The tilt is a ROLL (rotation around the Look axis), not a
+				-- PITCH (rotation around the Right axis): rolling leaves the
+				-- Look vector untouched, so the character keeps facing
+				-- exactly yawSourceDirection while still laying the body
+				-- horizontal. A pitch would drag the face away from the
+				-- travel direction toward straight up/down, which is what
+				-- made the swimmer look like it was facing sideways.
 				local yaw = math.atan2(-yawSourceDirection.X, -yawSourceDirection.Z)
 				local targetCFrame = CFrame.new(rootPart.Position)
 					* CFrame.Angles(0, yaw, 0)
-					* CFrame.Angles(leanAngle, 0, 0)
+					* CFrame.Angles(0, 0, leanAngle)
 				local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 				rootPart.CFrame = rootPart.CFrame:Lerp(targetCFrame, turnAlpha)
 			end
