@@ -18,6 +18,16 @@
 -- Look vector's horizontal component (the part that visually reads as
 -- "facing the way you're going") shrinks to nothing as pitch approaches
 -- vertical.
+--
+-- This script is the SOLE owner of the character's rotation while
+-- swimming. Humanoid.AutoRotate is explicitly disabled in enterSwimMode
+-- so Roblox's own Shift Lock controller never also tries to rotate the
+-- character to face the camera -- PlatformStand alone does not block
+-- that path, and the two fighting over rotation each frame is what
+-- caused visible shaking. The camera's facing (used for WASD direction)
+-- and the character's body facing (set here) are intentionally
+-- independent: the camera is free to look anywhere without ever
+-- rotating the body itself.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -284,6 +294,13 @@ local function onCharacterAdded(character)
 		isSwimming = true
 		animateScript.Disabled = true
 		humanoid.PlatformStand = true
+		-- PlatformStand alone doesn't stop Roblox's own Shift Lock controller
+		-- from trying to rotate the character to face the camera -- that
+		-- path runs through AutoRotate, a separate flag. With both systems
+		-- fighting over rotation while PlatformStand is also active, the
+		-- result was visible camera/character shaking. Disabling AutoRotate
+		-- hands rotation exclusively to this script, in every camera mode.
+		humanoid.AutoRotate = false
 		if swimEffects.splash then
 			swimEffects.splash:Emit(20)
 		end
@@ -292,6 +309,7 @@ local function onCharacterAdded(character)
 	local function exitSwimMode()
 		isSwimming = false
 		humanoid.PlatformStand = false
+		humanoid.AutoRotate = true
 		animateScript.Disabled = false
 		stopSwimAnimations()
 		if swimEffects.splash then
@@ -351,15 +369,14 @@ local function onCharacterAdded(character)
 		local fullVelocity = Vector3.new(horizontalVelocity.X, verticalSpeed, horizontalVelocity.Z)
 		rootPart.AssemblyLinearVelocity = fullVelocity
 
-		-- Shift lock (or first person) drives its own character-facing
-		-- rotation independently of PlatformStand, so our own rotation
-		-- write here fought it every frame and caused visible shaking.
-		-- Simplest fix: don't touch rotation ourselves while it's active,
-		-- and let Roblox's own system own it entirely.
-		local shiftLockActive = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		-- With AutoRotate disabled (see enterSwimMode), this script is the
+		-- ONLY system that ever rotates the character while swimming --
+		-- Shift Lock, first person, and classic camera all leave rotation
+		-- alone now, so this runs unconditionally instead of trying to
+		-- guess which camera mode is active.
 		local movingBackward = isAnyKeyHeld(BACK_KEYS)
 
-		if not shiftLockActive and fullVelocity.Magnitude > 0.01 then
+		if fullVelocity.Magnitude > 0.01 then
 			-- Backward keeps facing the camera direction (a moonwalk-style
 			-- backstroke) instead of spinning around to face the way it's
 			-- actually traveling; forward faces the actual horizontal move
