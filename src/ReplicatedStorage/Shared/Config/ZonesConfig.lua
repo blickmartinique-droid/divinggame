@@ -37,7 +37,7 @@ return {
 			AtmosphereHaze = 3,
 		},
 		{
-			Name = "Abysses",
+			Name = "Entrée de l'abysse",
 			MinDepth = 400,
 			MaxDepth = 500,
 			FogColor = Color3.fromRGB(2, 5, 10),
