@@ -6,7 +6,9 @@
 -- drives 100% of the character's motion: horizontal + camera-pitch-driven
 -- vertical (W/S follow the camera's full look direction, A/D stay
 -- horizontal), an additional manual vertical control (Space/LeftControl/C),
--- facing direction, and swim animations.
+-- facing direction, and swim animations. Touch thumbstick and gamepad are
+-- supported through Humanoid.MoveDirection / Humanoid.Jump as a fallback
+-- when no keyboard key is held (see the movement loop).
 --
 -- Orientation is driven by the SAME 3D direction the physics actually
 -- moves the character in (the combined camera-look + manual-vertical
@@ -389,19 +391,48 @@ local function onCharacterAdded(character)
 		-- nudging the character above the surface. Strafing (A/D) also stays
 		-- purely horizontal -- camera pitch shouldn't push sideways movement
 		-- up or down.
+		local forwardHeld = isAnyKeyHeld(FORWARD_KEYS)
+		local backHeld = isAnyKeyHeld(BACK_KEYS)
+		local rightHeld = isAnyKeyHeld(RIGHT_KEYS)
+		local leftHeld = isAnyKeyHeld(LEFT_KEYS)
+
 		local moveDirection3D = Vector3.new()
-		if isAnyKeyHeld(FORWARD_KEYS) then
+		if forwardHeld then
 			moveDirection3D += camera.CFrame.LookVector
 		end
-		if isAnyKeyHeld(BACK_KEYS) then
+		if backHeld then
 			moveDirection3D -= flatLook
 		end
-		if isAnyKeyHeld(RIGHT_KEYS) then
+		if rightHeld then
 			moveDirection3D += flatRight
 		end
-		if isAnyKeyHeld(LEFT_KEYS) then
+		if leftHeld then
 			moveDirection3D -= flatRight
 		end
+
+		-- Touch thumbstick / gamepad: Roblox's own control script keeps
+		-- feeding Humanoid.MoveDirection (camera-relative, horizontal) even
+		-- under PlatformStand, so it's read here ONLY when no tracked key is
+		-- held (keyboard also drives MoveDirection, and must not count twice).
+		-- Its forward/strafe components map onto exactly the same vectors
+		-- the keys use above, so pitch, sprint, and backward handling all
+		-- behave identically whichever input produced the movement.
+		if not (forwardHeld or backHeld or rightHeld or leftHeld) then
+			local analog = humanoid.MoveDirection
+			if analog.Magnitude > 0.05 then
+				local forwardAmount = analog:Dot(flatLook)
+				local strafeAmount = analog:Dot(flatRight)
+				if forwardAmount > 0 then
+					moveDirection3D += camera.CFrame.LookVector * forwardAmount
+				else
+					moveDirection3D += flatLook * forwardAmount
+				end
+				moveDirection3D += flatRight * strafeAmount
+				forwardHeld = forwardAmount > 0.5
+				backHeld = forwardAmount < -0.5
+			end
+		end
+
 		if moveDirection3D.Magnitude > 0 then
 			moveDirection3D = moveDirection3D.Unit
 		end
@@ -412,7 +443,7 @@ local function onCharacterAdded(character)
 		-- as a smooth exponential approach (same shape as the turning/rest
 		-- pose lerps below) rather than a linear ramp, so it eases in/out
 		-- instead of ticking up at a constant rate.
-		local sprintTarget = (isAnyKeyHeld(FORWARD_KEYS) and not isAnyKeyHeld(BACK_KEYS)) and 1 or 0
+		local sprintTarget = (forwardHeld and not backHeld) and 1 or 0
 		local sprintRampTime = (sprintTarget > sprintFactor) and SPRINT_RAMP_UP_TIME or SPRINT_RAMP_DOWN_TIME
 		local sprintAlpha = 1 - math.exp(-(1 / sprintRampTime) * deltaTime)
 		sprintFactor = sprintFactor + (sprintTarget - sprintFactor) * sprintAlpha
@@ -421,8 +452,10 @@ local function onCharacterAdded(character)
 		-- on top of whatever camera-pitch-driven vertical speed W/S already
 		-- produced above. Deliberately left out of the sprint speed scale
 		-- below -- manual vertical control stays exactly as it always was.
+		-- humanoid.Jump is the touch/gamepad jump button (PlatformStand
+		-- swallows the actual jump), reused as "ascend" so mobile can surface.
 		local manualVerticalSpeed = 0
-		if isAnyKeyHeld(ASCEND_KEYS) then
+		if isAnyKeyHeld(ASCEND_KEYS) or humanoid.Jump then
 			manualVerticalSpeed += MovementConfig.VerticalSwimSpeed
 		end
 		if isAnyKeyHeld(DESCEND_KEYS) then
@@ -467,7 +500,7 @@ local function onCharacterAdded(character)
 		-- Shift Lock, first person, and classic camera all leave rotation
 		-- alone now, so this runs unconditionally instead of trying to
 		-- guess which camera mode is active.
-		local movingBackward = isAnyKeyHeld(BACK_KEYS)
+		local movingBackward = backHeld
 		local turnAlpha = 1 - math.exp(-TURN_RESPONSIVENESS * deltaTime)
 
 		if fullVelocity.Magnitude > 0.01 then
