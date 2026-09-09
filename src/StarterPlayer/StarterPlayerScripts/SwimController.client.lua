@@ -72,7 +72,23 @@ local ANIMATION_PLAYBACK_SPEEDS = {
 	Idle = 0.25,
 	Forward = 0.4,
 	Backward = 0.25,
+	Sprint = 0.7,
 }
+
+-- Sprint: a smooth speed ramp on top of normal forward swimming, not a
+-- separate control. Holding forward continuously builds sprintFactor
+-- (0-1) toward 1 over SPRINT_RAMP_UP_TIME; releasing forward (or moving
+-- backward/idle) decays it back over SPRINT_RAMP_DOWN_TIME. The resulting
+-- speed multiplier is applied uniformly to the whole forward/strafe
+-- direction vector, so it's a genuine acceleration (direction and pitch
+-- are unaffected -- see the velocity/orientation code below) rather than
+-- an instant dash. The Sprint animation only takes over once the ramp is
+-- mostly complete (SPRINT_ANIMATION_THRESHOLD), so it reads as "now going
+-- fast" rather than triggering the instant forward is pressed.
+local SPRINT_SPEED_MULTIPLIER = 1.4
+local SPRINT_RAMP_UP_TIME = 1.4
+local SPRINT_RAMP_DOWN_TIME = 0.8
+local SPRINT_ANIMATION_THRESHOLD = 0.6
 
 -- Small hysteresis margin above the surface (Y = 0) before swim mode
 -- actually exits. Without it, tiny position noise right at the waterline
@@ -176,6 +192,7 @@ local function loadSwimAnimations(character, humanoid)
 		Idle = loadTrack(SwimAnimationsConfig.Idle, defaultIdleAnim),
 		Forward = loadTrack(SwimAnimationsConfig.Forward, defaultMoveAnim),
 		Backward = loadTrack(SwimAnimationsConfig.Backward, defaultMoveAnim),
+		Sprint = loadTrack(SwimAnimationsConfig.Sprint, defaultMoveAnim),
 	}
 end
 
@@ -309,6 +326,7 @@ local function onCharacterAdded(character)
 	local depthHold = setupDepthHold(rootPart)
 	local isSwimming = false
 	local currentSwimState = nil
+	local sprintFactor = 0
 
 	local function playSwimState(state)
 		if currentSwimState == state then
@@ -357,6 +375,7 @@ local function onCharacterAdded(character)
 		depthHold.Enabled = false
 		animateScript.Disabled = false
 		stopSwimAnimations()
+		sprintFactor = 0
 		if swimEffects.splash then
 			swimEffects.splash:Emit(20)
 		end
@@ -434,9 +453,21 @@ local function onCharacterAdded(character)
 			moveDirection3D = moveDirection3D.Unit
 		end
 
+		-- Sprint ramp: builds up only while holding forward (and not also
+		-- backward), decays otherwise -- including while idle, strafing
+		-- alone, or swimming backward, so it never affects those. Applied
+		-- as a smooth exponential approach (same shape as the turning/rest
+		-- pose lerps below) rather than a linear ramp, so it eases in/out
+		-- instead of ticking up at a constant rate.
+		local sprintTarget = (isAnyKeyHeld(FORWARD_KEYS) and not isAnyKeyHeld(BACK_KEYS)) and 1 or 0
+		local sprintRampTime = (sprintTarget > sprintFactor) and SPRINT_RAMP_UP_TIME or SPRINT_RAMP_DOWN_TIME
+		local sprintAlpha = 1 - math.exp(-(1 / sprintRampTime) * deltaTime)
+		sprintFactor = sprintFactor + (sprintTarget - sprintFactor) * sprintAlpha
+
 		-- Space/Ctrl remain available as a manual, additive vertical control
 		-- on top of whatever camera-pitch-driven vertical speed W/S already
-		-- produced above.
+		-- produced above. Deliberately left out of the sprint speed scale
+		-- below -- manual vertical control stays exactly as it always was.
 		local manualVerticalSpeed = 0
 		if isAnyKeyHeld(ASCEND_KEYS) then
 			manualVerticalSpeed += MovementConfig.VerticalSwimSpeed
@@ -445,7 +476,14 @@ local function onCharacterAdded(character)
 			manualVerticalSpeed -= MovementConfig.VerticalSwimSpeed
 		end
 
-		local fullVelocity = moveDirection3D * MovementConfig.BaseSwimSpeed + Vector3.new(0, manualVerticalSpeed, 0)
+		-- Scaling the whole (already-normalized) direction vector's speed
+		-- preserves its direction exactly -- including the ratio between
+		-- horizontal and camera-pitch-driven vertical speed that the pitch
+		-- calculation below depends on -- so sprinting changes velocity
+		-- magnitude only, never facing or orientation.
+		local sprintSpeedScale = 1 + sprintFactor * (SPRINT_SPEED_MULTIPLIER - 1)
+		local fullVelocity = moveDirection3D * MovementConfig.BaseSwimSpeed * sprintSpeedScale
+			+ Vector3.new(0, manualVerticalSpeed, 0)
 		rootPart.AssemblyLinearVelocity = fullVelocity
 		-- depthHold (a LinearVelocity constraint, Y axis only) is what
 		-- actually holds the vertical speed against gravity between frames;
@@ -535,7 +573,11 @@ local function onCharacterAdded(character)
 		if movingBackward then
 			targetState = "Backward"
 		elseif fullVelocity.Magnitude > 0.01 then
-			targetState = "Forward"
+			-- Only forward movement ever reaches sprint (movingBackward is
+			-- handled above, and sprintFactor only ramps up on forward
+			-- input in the first place), so idle and backward are never
+			-- affected.
+			targetState = (sprintFactor >= SPRINT_ANIMATION_THRESHOLD) and "Sprint" or "Forward"
 		else
 			targetState = "Idle"
 		end
