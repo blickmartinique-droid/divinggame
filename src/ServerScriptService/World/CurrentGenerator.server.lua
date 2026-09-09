@@ -8,9 +8,9 @@
 --   Directional -- a straight flow through open water or a corridor.
 --     Particles drift the whole length of the zone along one fixed
 --     direction (the marker part's own orientation).
---   Circular -- a vortex. A ring of small bubble emitters continuously
---     orbits the center (with a slight inward spiral), suited to sit near
---     a wreck, cave mouth, or other landmark.
+--   Circular -- a vortex. A set of small strands continuously spiral inward
+--     while orbiting the center (respawning at the edge once they reach the
+--     middle), suited to sit near a wreck, cave mouth, or other landmark.
 --
 -- Currents are plain Parts with Attributes (shape, flow speed, tier,
 -- enabled, canBoost, size/radius) rather than a ModuleScript registry, so
@@ -124,7 +124,7 @@ local function createDirectionalCurrent(props)
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	motes.Color = ColorSequence.new(FLOW_COLOR)
-	motes.LightEmission = 0.25
+	motes.LightEmission = 0.1
 	motes.LightInfluence = 0
 	motes.Rotation = NumberRange.new(0, 360)
 	motes.RotSpeed = NumberRange.new(-15, 15)
@@ -153,6 +153,71 @@ local function createDirectionalCurrent(props)
 	bubbles.Color = ColorSequence.new(BUBBLE_COLOR)
 	bubbles.Parent = part
 
+	-- Sparser, brighter, near-straight threads (tight SpreadAngle) read as
+	-- distinct lines of water actually moving through the corridor, instead
+	-- of the fine motes above just reading as diffuse drifting dust.
+	local streamers = Instance.new("ParticleEmitter")
+	streamers.Name = "CurrentStreamers"
+	streamers.EmissionDirection = Enum.NormalId.Front
+	streamers.Rate = 2 * intensity
+	streamers.Lifetime = NumberRange.new(1.5, 2.5)
+	streamers.Speed = NumberRange.new(flowSpeed * 0.8, flowSpeed * 1.3)
+	streamers.SpreadAngle = Vector2.new(2, 2)
+	streamers.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(0.5, 0.1),
+		NumberSequenceKeypoint.new(1, 0.02),
+	})
+	streamers.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.1, 1 - 0.6 * intensity),
+		NumberSequenceKeypoint.new(0.9, 1 - 0.6 * intensity),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	streamers.Color = ColorSequence.new(FLOW_COLOR)
+	streamers.LightEmission = 0.08
+	streamers.LightInfluence = 0
+	streamers.Parent = part
+
+	-- A soft, sparse puff right at each end face marks where the zone
+	-- actually starts/stops -- larger and slower than the flow motes so it
+	-- reads as a boundary, but still just loose particles (never a flat
+	-- disc or wall) so it stays consistent with "the water itself moves"
+	-- rather than a hard edge.
+	local function createBoundaryVeil(name, localZ)
+		local attachment = Instance.new("Attachment")
+		attachment.Name = name .. "Attachment"
+		attachment.Position = Vector3.new(0, 0, localZ)
+		attachment.Parent = part
+
+		local veil = Instance.new("ParticleEmitter")
+		veil.Name = name
+		veil.Rate = 2.5 * intensity
+		veil.Lifetime = NumberRange.new(2.5, 4)
+		veil.Speed = NumberRange.new(0.3, 0.8)
+		veil.SpreadAngle = Vector2.new(150, 150)
+		veil.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.3),
+			NumberSequenceKeypoint.new(0.5, 0.5),
+			NumberSequenceKeypoint.new(1, 0.1),
+		})
+		veil.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.3, 1 - 0.35 * intensity),
+			NumberSequenceKeypoint.new(0.7, 1 - 0.35 * intensity),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		veil.Color = ColorSequence.new(FLOW_COLOR)
+		veil.LightEmission = 0
+		veil.LightInfluence = 1
+		veil.Rotation = NumberRange.new(0, 360)
+		veil.RotSpeed = NumberRange.new(-10, 10)
+		veil.Parent = attachment
+	end
+
+	createBoundaryVeil("CurrentEntryVeil", -props.Length / 2)
+	createBoundaryVeil("CurrentExitVeil", props.Length / 2)
+
 	return part
 end
 
@@ -161,13 +226,26 @@ end
 -- props: Name, Position (Vector3, center), Radius, Tier, Spin (1 or -1,
 -- default 1), SpiralBias (0-1ish, default 0.15 = drawn slightly inward),
 -- plus the same optional overrides as above.
-local ORBIT_ANCHOR_COUNT = 8
-local ORBIT_UPDATE_INTERVAL = 1 / 20 -- 20Hz is smooth enough for a slow drift and cheaper than every frame
+--
+-- Visual model: a set of strands spiral inward from the outer radius toward
+-- the center while orbiting, each respawning back at the edge once it
+-- reaches the middle, rather than a fixed ring of points orbiting at one
+-- radius -- at any instant strands sit at every radius between edge and
+-- center, so the shape reads as a filled funnel of moving water instead of
+-- a static glowing ring (which is what a single fixed orbit radius looks
+-- like from a distance). Each strand also gets its own small, fixed height
+-- offset so the funnel has real vertical depth instead of lying flat, and
+-- turns to face its own direction of travel so its short Trail always
+-- points the way the water is actually spiralling.
+local VORTEX_STRAND_COUNT = 14
+local VORTEX_UPDATE_INTERVAL = 1 / 20 -- 20Hz is smooth enough for a slow drift and cheaper than every frame
+local VORTEX_INNER_RADIUS_FRACTION = 0.12
 
 local activeVortices = {}
 
 local function createCircularCurrent(props)
 	local tier = CurrentsConfig.Tiers[props.Tier]
+	local spiralBias = props.SpiralBias or 0.15
 
 	local part = Instance.new("Part")
 	part.Name = props.Name
@@ -180,7 +258,7 @@ local function createCircularCurrent(props)
 	part:SetAttribute("CurrentShape", "Circular")
 	part:SetAttribute("CurrentRadius", props.Radius)
 	part:SetAttribute("CurrentSpin", props.Spin or 1)
-	part:SetAttribute("CurrentSpiralBias", props.SpiralBias or 0.15)
+	part:SetAttribute("CurrentSpiralBias", spiralBias)
 	applyCommonAttributes(part, props.Tier, tier, props)
 	part.Parent = currentsFolder
 
@@ -189,48 +267,87 @@ local function createCircularCurrent(props)
 	local radius = props.Radius
 	local spin = props.Spin or 1
 	local angularSpeed = math.max(0.15, flowSpeed / radius) -- radians/sec, faster currents swirl visibly faster
+	local inwardSpeed = math.max(0.4, flowSpeed * spiralBias) -- studs/s drift toward the center
 
 	local vortexFolder = Instance.new("Folder")
-	vortexFolder.Name = "VortexAnchors"
+	vortexFolder.Name = "VortexStrands"
 	vortexFolder.Parent = part
 
-	local anchors = {}
-	for i = 1, ORBIT_ANCHOR_COUNT do
-		local anchor = Instance.new("Part")
-		anchor.Name = "VortexAnchor"
-		anchor.Anchored = true
-		anchor.CanCollide = false
-		anchor.CanQuery = false
-		anchor.Transparency = 1
-		anchor.Size = Vector3.new(0.5, 0.5, 0.5)
-		anchor.Parent = vortexFolder
+	local function randomHeightOffset()
+		return (math.random() - 0.5) * radius * 0.25
+	end
+
+	local strands = {}
+	for i = 1, VORTEX_STRAND_COUNT do
+		local strand = Instance.new("Part")
+		strand.Name = "VortexStrand"
+		strand.Anchored = true
+		strand.CanCollide = false
+		strand.CanQuery = false
+		strand.Transparency = 1
+		strand.Size = Vector3.new(0.3, 0.3, 0.3)
+		strand.Parent = vortexFolder
+
+		local attachmentFront = Instance.new("Attachment")
+		attachmentFront.Position = Vector3.new(0, 0, -0.4)
+		attachmentFront.Parent = strand
+
+		local attachmentBack = Instance.new("Attachment")
+		attachmentBack.Position = Vector3.new(0, 0, 0.4)
+		attachmentBack.Parent = strand
+
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = attachmentFront
+		trail.Attachment1 = attachmentBack
+		trail.Lifetime = 0.5
+		trail.MinLength = 0
+		trail.FaceCamera = true
+		trail.Color = ColorSequence.new(FLOW_COLOR)
+		trail.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1 - 0.5 * intensity),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		trail.WidthScale = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		trail.Parent = strand
 
 		local bubbles = Instance.new("ParticleEmitter")
 		bubbles.Name = "VortexBubbles"
-		bubbles.Rate = 4 * intensity
+		bubbles.Rate = 2.2 * intensity
 		bubbles.Lifetime = NumberRange.new(1, 2)
-		bubbles.Speed = NumberRange.new(0.3, 0.8)
+		bubbles.Speed = NumberRange.new(0.2, 0.6)
 		bubbles.SpreadAngle = Vector2.new(180, 180)
 		bubbles.Acceleration = Vector3.new(0, 1, 0)
 		bubbles.Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.12),
-			NumberSequenceKeypoint.new(1, 0.2),
+			NumberSequenceKeypoint.new(0, 0.1),
+			NumberSequenceKeypoint.new(1, 0.18),
 		})
 		bubbles.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.25, 1 - 0.5 * intensity),
-			NumberSequenceKeypoint.new(0.75, 1 - 0.5 * intensity),
+			NumberSequenceKeypoint.new(0.25, 1 - 0.45 * intensity),
+			NumberSequenceKeypoint.new(0.75, 1 - 0.45 * intensity),
 			NumberSequenceKeypoint.new(1, 1),
 		})
 		bubbles.Color = ColorSequence.new(BUBBLE_COLOR)
-		bubbles.LightEmission = 0.2
+		bubbles.LightEmission = 0
 		bubbles.LightInfluence = 0
-		bubbles.Parent = anchor
+		bubbles.Parent = strand
 
-		table.insert(anchors, {
-			part = anchor,
-			angleOffset = (i / ORBIT_ANCHOR_COUNT) * math.pi * 2,
-			radiusPhase = math.random() * math.pi * 2,
+		local startRadius = radius * (VORTEX_INNER_RADIUS_FRACTION + math.random() * (1 - VORTEX_INNER_RADIUS_FRACTION))
+		local startAngle = math.random() * math.pi * 2
+		local heightOffset = randomHeightOffset()
+		local startPosition = props.Position
+			+ Vector3.new(math.cos(startAngle) * startRadius, heightOffset, math.sin(startAngle) * startRadius)
+		strand.CFrame = CFrame.new(startPosition)
+
+		table.insert(strands, {
+			part = strand,
+			angle = startAngle,
+			radius = startRadius,
+			height = heightOffset,
+			previousPosition = startPosition,
 		})
 	end
 
@@ -239,31 +356,45 @@ local function createCircularCurrent(props)
 		radius = radius,
 		spin = spin,
 		angularSpeed = angularSpeed,
-		anchors = anchors,
+		inwardSpeed = inwardSpeed,
+		strands = strands,
 	})
 
 	return part
 end
 
--- Single shared loop drives every vortex's orbiting anchors, matching the
+-- Single shared loop drives every vortex's spiralling strands, matching the
 -- rest of this codebase's pattern of one continuous server-side loop per
 -- family of cosmetic effect (see OceanGenerator's whitecap loop) rather
 -- than a per-instance Heartbeat connection.
 task.spawn(function()
-	local elapsed = 0
 	while true do
-		task.wait(ORBIT_UPDATE_INTERVAL)
-		elapsed += ORBIT_UPDATE_INTERVAL
+		task.wait(VORTEX_UPDATE_INTERVAL)
 
 		for _, vortex in ipairs(activeVortices) do
-			for _, anchor in ipairs(vortex.anchors) do
-				local angle = anchor.angleOffset + elapsed * vortex.angularSpeed * vortex.spin
-				-- Radius breathes slowly in and out (a soft spiral) instead
-				-- of tracing a perfectly flat circle every time.
-				local radiusFraction = 0.65 + 0.35 * ((math.sin(elapsed * 0.4 + anchor.radiusPhase) + 1) / 2)
-				local currentRadius = vortex.radius * radiusFraction
-				local offset = Vector3.new(math.cos(angle) * currentRadius, 0, math.sin(angle) * currentRadius)
-				anchor.part.Position = vortex.center + offset
+			for _, strand in ipairs(vortex.strands) do
+				strand.angle += vortex.angularSpeed * vortex.spin * VORTEX_UPDATE_INTERVAL
+				strand.radius -= vortex.inwardSpeed * VORTEX_UPDATE_INTERVAL
+
+				if strand.radius <= vortex.radius * VORTEX_INNER_RADIUS_FRACTION then
+					strand.radius = vortex.radius
+					strand.angle = math.random() * math.pi * 2
+					strand.height = (math.random() - 0.5) * vortex.radius * 0.25
+				end
+
+				local position = vortex.center
+					+ Vector3.new(
+						math.cos(strand.angle) * strand.radius,
+						strand.height,
+						math.sin(strand.angle) * strand.radius
+					)
+
+				if (position - strand.previousPosition).Magnitude > 0.01 then
+					strand.part.CFrame = CFrame.lookAt(strand.previousPosition, position)
+				else
+					strand.part.CFrame = CFrame.new(position)
+				end
+				strand.previousPosition = position
 			end
 		end
 	end
