@@ -204,66 +204,18 @@ local function loadSwimAnimations(character, humanoid)
 	}
 end
 
--- Bubble trail behind the hands while swimming, purely cosmetic feedback for
--- movement speed/direction.
-local function createHandTrail(hand)
-	local attachmentFront = Instance.new("Attachment")
-	attachmentFront.Position = Vector3.new(0, 0.4, 0)
-	attachmentFront.Parent = hand
-
-	local attachmentBack = Instance.new("Attachment")
-	attachmentBack.Position = Vector3.new(0, -0.4, 0)
-	attachmentBack.Parent = hand
-
-	local trail = Instance.new("Trail")
-	trail.Attachment0 = attachmentFront
-	trail.Attachment1 = attachmentBack
-	trail.Lifetime = 0.5
-	trail.MinLength = 0
-	trail.FaceCamera = true
-	trail.Color = ColorSequence.new(Color3.fromRGB(235, 250, 255))
-	trail.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.4),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	trail.WidthScale = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(1, 0),
-	})
-	trail.Enabled = false
-	trail.Parent = hand
-
-	return trail
-end
-
+-- The old flat hand-ribbon Trail and single flat bubble emitter that used
+-- to live here have been superseded by SwimWaterEffects.client.lua (richer,
+-- more varied bubbles + a direction-aware wake), which runs independently
+-- and reads only this script's already-public rootPart.AssemblyLinearVelocity
+-- -- nothing about movement/rotation/physics below changed for that. Only
+-- the one-shot surface entry/exit splash stays here, since it isn't part of
+-- that new system.
 local function setupSwimEffects(character)
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	local effects = { trails = {} }
-
-	-- R15 names these LeftHand/RightHand; R6 only has whole-arm parts.
-	local leftHand = character:FindFirstChild("LeftHand") or character:FindFirstChild("Left Arm")
-	local rightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
-	if leftHand then
-		table.insert(effects.trails, createHandTrail(leftHand))
-	end
-	if rightHand then
-		table.insert(effects.trails, createHandTrail(rightHand))
-	end
+	local effects = {}
 
 	if rootPart then
-		local bubbles = Instance.new("ParticleEmitter")
-		bubbles.Rate = 0
-		bubbles.Lifetime = NumberRange.new(0.4, 0.8)
-		bubbles.Speed = NumberRange.new(1, 2)
-		bubbles.Size = NumberSequence.new(0.15)
-		bubbles.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.3),
-			NumberSequenceKeypoint.new(1, 1),
-		})
-		bubbles.Color = ColorSequence.new(Color3.new(1, 1, 1))
-		bubbles.Parent = rootPart
-		effects.bubbles = bubbles
-
 		local splash = Instance.new("ParticleEmitter")
 		splash.Name = "SplashEmitter"
 		splash.Rate = 0
@@ -284,18 +236,6 @@ local function setupSwimEffects(character)
 	end
 
 	return effects
-end
-
-local function setSwimEffectsActive(effects, active)
-	if not effects then
-		return
-	end
-	for _, trail in ipairs(effects.trails) do
-		trail.Enabled = active
-	end
-	if effects.bubbles then
-		effects.bubbles.Rate = active and 25 or 0
-	end
 end
 
 -- Resetting AssemblyLinearVelocity.Y once per Heartbeat isn't enough to
@@ -348,7 +288,6 @@ local function onCharacterAdded(character)
 			animationTracks[state]:Play(ANIMATION_FADE_TIME)
 			animationTracks[state]:AdjustSpeed(ANIMATION_PLAYBACK_SPEEDS[state] or 1)
 		end
-		setSwimEffectsActive(swimEffects, state ~= "Idle")
 	end
 
 	local function stopSwimAnimations()
@@ -356,7 +295,6 @@ local function onCharacterAdded(character)
 			animationTracks[currentSwimState]:Stop(ANIMATION_FADE_TIME)
 		end
 		currentSwimState = nil
-		setSwimEffectsActive(swimEffects, false)
 	end
 
 	local function enterSwimMode()
