@@ -108,8 +108,15 @@ local function announceZone(zone)
 	end)
 end
 
+-- Lighting/Atmosphere writes are skipped while depth hasn't meaningfully
+-- moved (idle at the surface, hovering in place): six property writes per
+-- frame for identical values is pure waste, and the blend is so gradual
+-- that a 0.1-stud step is invisible.
+local DEPTH_APPLY_EPSILON = 0.1
+
 local function onCharacterAdded(character)
 	local currentZoneName = nil
+	local lastAppliedDepth = nil
 	local rootPart = character:WaitForChild("HumanoidRootPart")
 
 	local connection
@@ -120,7 +127,10 @@ local function onCharacterAdded(character)
 		end
 
 		local depth = DepthUtils.GetDepth(rootPart.Position)
-		applyVisuals(computeVisualsAtDepth(depth))
+		if not lastAppliedDepth or math.abs(depth - lastAppliedDepth) >= DEPTH_APPLY_EPSILON then
+			lastAppliedDepth = depth
+			applyVisuals(computeVisualsAtDepth(depth))
+		end
 
 		if depth > 0 then
 			local zone = DepthUtils.GetZoneForDepth(depth)

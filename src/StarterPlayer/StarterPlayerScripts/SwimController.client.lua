@@ -126,6 +126,13 @@ UserInputService.InputEnded:Connect(function(input)
 	heldKeys[input.KeyCode] = nil
 end)
 
+-- Alt-tabbing / clicking out of the window swallows the InputEnded for any
+-- key held at that moment, which would otherwise leave the character
+-- swimming in that direction forever once focus returns.
+UserInputService.WindowFocusReleased:Connect(function()
+	table.clear(heldKeys)
+end)
+
 local function isAnyKeyHeld(keySet)
 	for keyCode in pairs(keySet) do
 		if heldKeys[keyCode] then
@@ -351,7 +358,7 @@ local function onCharacterAdded(character)
 		-- here since the "swimming" branch can itself be false.
 		local shouldSwim
 		if isSwimming then
-			shouldSwim = rootPart.Position.Y < SURFACE_EXIT_BUFFER
+			shouldSwim = rootPart.Position.Y < DepthUtils.SURFACE_Y + SURFACE_EXIT_BUFFER
 		else
 			shouldSwim = DepthUtils.GetDepth(rootPart.Position) > 0
 		end

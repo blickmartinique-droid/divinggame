@@ -16,7 +16,6 @@
 -- Replaces the earlier DepthDebugUI stand-in.
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -207,12 +206,13 @@ local function setLowOxygenAlertActive(active: boolean)
 end
 
 -- Live updates ------------------------------------------------------------
+-- Event-driven: the server only writes Depth/Oxygen a few times per second,
+-- so redrawing from each value's Changed signal is both cheaper and exactly
+-- as current as polling every frame was.
 
 local currentZoneName = nil
 
-RunService.Heartbeat:Connect(function()
-	local depthValue = player:FindFirstChild("Depth")
-	local depth = depthValue and depthValue.Value or 0
+local function refreshDepth(depth: number)
 	depthLabel.Text = string.format("📏 %d m", depth)
 
 	if depth > 0 then
@@ -225,21 +225,34 @@ RunService.Heartbeat:Connect(function()
 		currentZoneName = nil
 		setZoneRestStyle("Surface")
 	end
+end
 
-	local oxygenValue = player:FindFirstChild("Oxygen")
-	local maxOxygenValue = player:FindFirstChild("MaxOxygen")
-	if oxygenValue and maxOxygenValue then
-		local maxOxygen = maxOxygenValue.Value > 0 and maxOxygenValue.Value or OxygenConfig.MaxOxygen
-		local fraction = math.clamp(oxygenValue.Value / maxOxygen, 0, 1)
-		oxygenBarFill.Size = UDim2.new(fraction, 0, 1, 0)
-		oxygenCaption.Text = string.format("🫁 %d / %d", math.ceil(oxygenValue.Value), math.floor(maxOxygen))
+local function refreshOxygen(oxygen: number, maxOxygenRaw: number)
+	local maxOxygen = maxOxygenRaw > 0 and maxOxygenRaw or OxygenConfig.MaxOxygen
+	local fraction = math.clamp(oxygen / maxOxygen, 0, 1)
+	oxygenBarFill.Size = UDim2.new(fraction, 0, 1, 0)
+	oxygenCaption.Text = string.format("🫁 %d / %d", math.ceil(oxygen), math.floor(maxOxygen))
 
-		if fraction <= LOW_OXYGEN_THRESHOLD then
-			oxygenBarFill.BackgroundColor3 = OXYGEN_LOW_COLOR:Lerp(ACCENT_COLOR, fraction / LOW_OXYGEN_THRESHOLD)
-			setLowOxygenAlertActive(true)
-		else
-			oxygenBarFill.BackgroundColor3 = ACCENT_COLOR
-			setLowOxygenAlertActive(false)
-		end
+	if fraction <= LOW_OXYGEN_THRESHOLD then
+		oxygenBarFill.BackgroundColor3 = OXYGEN_LOW_COLOR:Lerp(ACCENT_COLOR, fraction / LOW_OXYGEN_THRESHOLD)
+		setLowOxygenAlertActive(true)
+	else
+		oxygenBarFill.BackgroundColor3 = ACCENT_COLOR
+		setLowOxygenAlertActive(false)
 	end
+end
+
+local depthValue = player:WaitForChild("Depth")
+local oxygenValue = player:WaitForChild("Oxygen")
+local maxOxygenValue = player:WaitForChild("MaxOxygen")
+
+depthValue.Changed:Connect(refreshDepth)
+oxygenValue.Changed:Connect(function(oxygen)
+	refreshOxygen(oxygen, maxOxygenValue.Value)
 end)
+maxOxygenValue.Changed:Connect(function(maxOxygen)
+	refreshOxygen(oxygenValue.Value, maxOxygen)
+end)
+
+refreshDepth(depthValue.Value)
+refreshOxygen(oxygenValue.Value, maxOxygenValue.Value)

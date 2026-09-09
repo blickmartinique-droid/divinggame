@@ -9,6 +9,8 @@ local SURFACE_Y = 0
 
 local DepthUtils = {}
 
+DepthUtils.SURFACE_Y = SURFACE_Y
+
 function DepthUtils.GetDepth(position: Vector3): number
 	return math.max(0, SURFACE_Y - position.Y)
 end
