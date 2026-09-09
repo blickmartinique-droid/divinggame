@@ -21,6 +21,9 @@
       },
       "Player": {
         "$path": "src/ServerScriptService/Player"
+      },
+      "Creatures": {
+        "$path": "src/ServerScriptService/Creatures"
       }
     }
   }

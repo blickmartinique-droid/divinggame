@@ -46,12 +46,44 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 - **Écran de mort** — `DeathScreen.client.lua` : overlay flou + message,
   déclenché actuellement par la noyade, prêt pour toute future source de dégâts.
 
+- **Courants sous-marins** — `CurrentGenerator.server.lua` place des zones
+  (Parts + Attributes, dupliquables dans Studio) directionnelles ou en vortex ;
+  `UnderwaterCurrents.client.lua` calcule la poussée et la publie via
+  `CurrentField` (vitesse, courant dominant, signaux `Entered`/`Exited`/`Changed`
+  pour brancher sons/VFX/HUD). `CurrentVortexAnimator.client.lua` anime les
+  vortex côté client (aucun trafic réseau).
+- **Créatures** — `CreaturesConfig.lua` (espèces : profondeur, rareté,
+  comportement Passive/Skittish/Predator, vitesses, dégâts),
+  `CreatureBrain.lua` (errance / fuite / poursuite / attaque) et
+  `CreatureSpawner.server.lua` (spawn par régions ou repli procédural, tick à
+  faible fréquence avec LOD distance). Corps placeholder tant qu'aucun modèle
+  n'est fourni.
+
+### Intégration du mapping et des assets (Blender / Studio)
+
+- **Assets** : placer les modèles dans `ReplicatedStorage/Assets/Creatures/<Id>`
+  (un `Model` avec `PrimaryPart`, orienté vers -Z) — le spawner les clone à la
+  place du placeholder. Ne rien mettre à la main dans `ReplicatedStorage/Shared`
+  ni dans les dossiers synchronisés par Rojo : ils sont écrasés à chaque sync.
+- **Zones de spawn** : n'importe quel Part avec le tag `SpawnRegion` (Tag
+  Editor) et les Attributes `RegionKind` (`Treasure` / `Creature`),
+  `RegionCount`, `RegionSpecies` (`"Sardine,Tortue"`), `RegionEnabled`. Sa boîte
+  (ou sa sphère) est le volume ; il peut vivre dans le modèle de l'épave, de la
+  grotte… Dès qu'une région d'un type existe, le placement procédural de ce type
+  est désactivé.
+- **Courants** : dupliquer un Part de `Workspace/Currents` et ajuster ses
+  Attributes (`CurrentShape`, `CurrentFlowSpeed`, `CurrentRadius`,
+  `CurrentDisplayName`…) ; le visuel est construit par `CurrentGenerator` — pour
+  un courant placé à la main, le plus simple reste d'ajouter une entrée dans ce
+  script.
+
 ### Pas encore construit
 
 Inventaire, vente / argent (Coins), équipements (Bouteille, Combinaison, Palmes,
-Lampe, Sac), morphologies (Petit / Moyen / Grand), créatures, harpon,
-décoration détaillée des zones (Récif/Grottes/Épave/Abysses — volontairement
-laissée simple pour l'instant), sauvegarde (DataStoreService).
+Lampe, Sac), morphologies (Petit / Moyen / Grand), harpon, évitement d'obstacles
+des créatures (elles traversent le terrain), décoration détaillée des zones
+(Récif/Grottes/Épave/Abysses — volontairement laissée simple pour l'instant),
+sauvegarde (DataStoreService).
 
 L'architecture 500 m est conçue pour être étendue plus tard (1000/2000/3000/4000 m)
 sans réécriture, mais ces paliers ne sont **pas** développés en V1.

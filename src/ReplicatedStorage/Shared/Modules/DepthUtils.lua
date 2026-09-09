@@ -15,13 +15,17 @@ function DepthUtils.GetDepth(position: Vector3): number
 	return math.max(0, SURFACE_Y - position.Y)
 end
 
-function DepthUtils.GetZoneForDepth(depth: number)
-	for _, zone in ipairs(ZonesConfig.Zones) do
+function DepthUtils.GetZoneIndexForDepth(depth: number): number
+	for index, zone in ipairs(ZonesConfig.Zones) do
 		if depth >= zone.MinDepth and depth < zone.MaxDepth then
-			return zone
+			return index
 		end
 	end
-	return ZonesConfig.Zones[#ZonesConfig.Zones]
+	return #ZonesConfig.Zones
+end
+
+function DepthUtils.GetZoneForDepth(depth: number)
+	return ZonesConfig.Zones[DepthUtils.GetZoneIndexForDepth(depth)]
 end
 
 return DepthUtils
