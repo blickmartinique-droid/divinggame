@@ -20,6 +20,13 @@
 -- independent of gameplay strength, so a current can in principle look
 -- more or less dramatic than it actually pushes, though the tiers below
 -- keep them matched for a coherent "stronger = more visible" default.
+--
+-- Hooking enter/exit behaviour (sounds, camera effects, VFX built
+-- separately, HUD): listen to CurrentField.Entered / Exited / Changed on
+-- the client -- each passes the current's marker Part, so any Attribute on
+-- it (CurrentTier, CurrentDisplayName, CurrentFlowSpeed, or custom ones
+-- added in Studio) is available to decide what to do. CurrentField
+-- .GetInfluence() gives a 0-1 "how deep inside" value for fading effects.
 
 return {
 	NO_BOOST_CAP = 4,

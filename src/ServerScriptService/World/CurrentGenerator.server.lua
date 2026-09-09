@@ -61,6 +61,7 @@ local function applyCommonAttributes(part, tierName, tier, overrides)
 	end
 
 	part:SetAttribute("CurrentTier", tierName)
+	part:SetAttribute("CurrentDisplayName", overrides.DisplayName or part.Name)
 	part:SetAttribute("CurrentEnabled", overrides.Enabled ~= false)
 	part:SetAttribute("CurrentFlowSpeed", overrides.FlowSpeed or tier.FlowSpeed)
 	part:SetAttribute("CurrentCanBoost", canBoost)
@@ -237,11 +238,13 @@ end
 -- offset so the funnel has real vertical depth instead of lying flat, and
 -- turns to face its own direction of travel so its short Trail always
 -- points the way the water is actually spiralling.
+--
+-- The server only PLACES the strands (below); the motion itself runs in
+-- CurrentVortexAnimator.client.lua, on each client, reading the same
+-- Attributes -- so there is no per-frame server work and no replication
+-- traffic for what is purely a cosmetic.
 local VORTEX_STRAND_COUNT = 14
-local VORTEX_UPDATE_INTERVAL = 1 / 20 -- 20Hz is smooth enough for a slow drift and cheaper than every frame
 local VORTEX_INNER_RADIUS_FRACTION = 0.12
-
-local activeVortices = {}
 
 local function createCircularCurrent(props)
 	local tier = CurrentsConfig.Tiers[props.Tier]
@@ -263,11 +266,7 @@ local function createCircularCurrent(props)
 	part.Parent = currentsFolder
 
 	local intensity = part:GetAttribute("CurrentVisualIntensity")
-	local flowSpeed = part:GetAttribute("CurrentFlowSpeed")
 	local radius = props.Radius
-	local spin = props.Spin or 1
-	local angularSpeed = math.max(0.15, flowSpeed / radius) -- radians/sec, faster currents swirl visibly faster
-	local inwardSpeed = math.max(0.4, flowSpeed * spiralBias) -- studs/s drift toward the center
 
 	local vortexFolder = Instance.new("Folder")
 	vortexFolder.Name = "VortexStrands"
@@ -277,8 +276,7 @@ local function createCircularCurrent(props)
 		return (math.random() - 0.5) * radius * 0.25
 	end
 
-	local strands = {}
-	for i = 1, VORTEX_STRAND_COUNT do
+	for _ = 1, VORTEX_STRAND_COUNT do
 		local strand = Instance.new("Part")
 		strand.Name = "VortexStrand"
 		strand.Anchored = true
@@ -341,64 +339,10 @@ local function createCircularCurrent(props)
 		local startPosition = props.Position
 			+ Vector3.new(math.cos(startAngle) * startRadius, heightOffset, math.sin(startAngle) * startRadius)
 		strand.CFrame = CFrame.new(startPosition)
-
-		table.insert(strands, {
-			part = strand,
-			angle = startAngle,
-			radius = startRadius,
-			height = heightOffset,
-			previousPosition = startPosition,
-		})
 	end
-
-	table.insert(activeVortices, {
-		center = props.Position,
-		radius = radius,
-		spin = spin,
-		angularSpeed = angularSpeed,
-		inwardSpeed = inwardSpeed,
-		strands = strands,
-	})
 
 	return part
 end
-
--- Single shared loop drives every vortex's spiralling strands, matching the
--- rest of this codebase's pattern of one continuous server-side loop per
--- family of cosmetic effect (see OceanGenerator's whitecap loop) rather
--- than a per-instance Heartbeat connection.
-task.spawn(function()
-	while true do
-		task.wait(VORTEX_UPDATE_INTERVAL)
-
-		for _, vortex in ipairs(activeVortices) do
-			for _, strand in ipairs(vortex.strands) do
-				strand.angle += vortex.angularSpeed * vortex.spin * VORTEX_UPDATE_INTERVAL
-				strand.radius -= vortex.inwardSpeed * VORTEX_UPDATE_INTERVAL
-
-				if strand.radius <= vortex.radius * VORTEX_INNER_RADIUS_FRACTION then
-					strand.radius = vortex.radius
-					strand.angle = math.random() * math.pi * 2
-					strand.height = (math.random() - 0.5) * vortex.radius * 0.25
-				end
-
-				local position = vortex.center
-					+ Vector3.new(
-						math.cos(strand.angle) * strand.radius,
-						strand.height,
-						math.sin(strand.angle) * strand.radius
-					)
-
-				if (position - strand.previousPosition).Magnitude > 0.01 then
-					strand.part.CFrame = CFrame.lookAt(strand.previousPosition, position)
-				else
-					strand.part.CFrame = CFrame.new(position)
-				end
-				strand.previousPosition = position
-			end
-		end
-	end
-end)
 
 -- Example placements ---------------------------------------------------------
 -- Reposition, retune, or duplicate these once real zone geometry (canyons,
@@ -409,6 +353,7 @@ end)
 -- open water. Weak + no boost, so it's felt but never turns into a shortcut.
 createDirectionalCurrent({
 	Name = "ReefDrift",
+	DisplayName = "Dérive du récif",
 	Position = Vector3.new(0, -15, -260),
 	Direction = Vector3.new(0, 0, -1),
 	Length = 200,
@@ -421,6 +366,7 @@ createDirectionalCurrent({
 -- across the open Récif, demonstrating the "natural fast lane" idea.
 createDirectionalCurrent({
 	Name = "RecifFastLane",
+	DisplayName = "Voie rapide du récif",
 	Position = Vector3.new(400, -50, 0),
 	Direction = Vector3.new(-1, 0, 0),
 	Length = 500,
@@ -433,6 +379,7 @@ createDirectionalCurrent({
 -- eventually run through an actual canyon/tunnel once that geometry exists.
 createDirectionalCurrent({
 	Name = "GrottesCorridorCurrent",
+	DisplayName = "Couloir des grottes",
 	Position = Vector3.new(-200, -180, 300),
 	Direction = Vector3.new(1, -0.15, -1),
 	Length = 400,
@@ -445,6 +392,7 @@ createDirectionalCurrent({
 -- range) -- demonstrates the circular/spiral shape and a strong pull.
 createCircularCurrent({
 	Name = "EpaveVortex",
+	DisplayName = "Tourbillon de l'épave",
 	Position = Vector3.new(150, -300, -150),
 	Radius = 70,
 	Spin = 1,
@@ -455,6 +403,7 @@ createCircularCurrent({
 -- circular shape at a gentler strength.
 createCircularCurrent({
 	Name = "ShallowEddy",
+	DisplayName = "Remous peu profond",
 	Position = Vector3.new(-250, -40, -100),
 	Radius = 35,
 	Spin = -1,

@@ -21,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local OxygenConfig = require(ReplicatedStorage.Shared.Config.OxygenConfig)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
+local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local player = Players.LocalPlayer
 
@@ -47,7 +48,8 @@ local container = Instance.new("Frame")
 container.Name = "HudContainer"
 container.AnchorPoint = Vector2.new(0, 0)
 container.Position = UDim2.new(0, 20, 0, 20)
-container.Size = UDim2.new(0, 220, 0, 118)
+container.Size = UDim2.new(0, 220, 0, 0)
+container.AutomaticSize = Enum.AutomaticSize.Y
 container.BackgroundColor3 = Color3.fromRGB(10, 20, 28)
 container.BackgroundTransparency = 0.25
 container.BorderSizePixel = 0
@@ -144,6 +146,37 @@ oxygenCaption.TextSize = 12
 oxygenCaption.TextColor3 = Color3.fromRGB(160, 190, 200)
 oxygenCaption.Text = "🫁 -- / --"
 oxygenCaption.Parent = container
+
+-- Current indicator: only present while inside a current (the row
+-- collapses out of the layout otherwise), driven by CurrentField's
+-- enter/exit signals rather than any polling of its own.
+local currentLabel = Instance.new("TextLabel")
+currentLabel.Name = "CurrentLabel"
+currentLabel.LayoutOrder = 5
+currentLabel.Size = UDim2.new(1, 0, 0, 16)
+currentLabel.BackgroundTransparency = 1
+currentLabel.TextXAlignment = Enum.TextXAlignment.Left
+currentLabel.Font = Enum.Font.GothamBold
+currentLabel.TextSize = 13
+currentLabel.TextColor3 = Color3.fromRGB(170, 225, 240)
+currentLabel.Text = ""
+currentLabel.Visible = false
+currentLabel.Parent = container
+
+local TIER_LABELS = { Weak = "faible", Medium = "moyen", Strong = "fort" }
+
+local function showCurrent(currentPart: BasePart)
+	local name = currentPart:GetAttribute("CurrentDisplayName") or currentPart.Name
+	local tier = TIER_LABELS[currentPart:GetAttribute("CurrentTier")] or ""
+	currentLabel.Text = string.format("🌊 %s (%s)", name, tier)
+	currentLabel.Visible = true
+end
+
+CurrentField.Entered:Connect(showCurrent)
+CurrentField.Changed:Connect(showCurrent)
+CurrentField.Exited:Connect(function()
+	currentLabel.Visible = false
+end)
 
 -- Zone label emphasis/settle transition --------------------------------
 
