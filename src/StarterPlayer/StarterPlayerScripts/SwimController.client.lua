@@ -45,6 +45,13 @@
 -- sink). depthHold enforces the same target Y velocity continuously
 -- inside the physics solver instead, with zero force on X/Z so it never
 -- touches horizontal movement.
+--
+-- Underwater currents (see CurrentField.lua and UnderwaterCurrents.client
+-- .lua) are folded into fullVelocity as one extra additive term, not a
+-- second movement system: this script still computes its own velocity
+-- exactly as before and only adds the current on top, so depth holding,
+-- rotation, and animation state all react to currents automatically
+-- without knowing currents exist.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -55,6 +62,7 @@ local Workspace = game:GetService("Workspace")
 local MovementConfig = require(ReplicatedStorage.Shared.Config.MovementConfig)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 local SwimAnimationsConfig = require(ReplicatedStorage.Shared.Config.SwimAnimationsConfig)
+local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -484,6 +492,18 @@ local function onCharacterAdded(character)
 		local sprintSpeedScale = 1 + sprintFactor * (SPRINT_SPEED_MULTIPLIER - 1)
 		local fullVelocity = moveDirection3D * MovementConfig.BaseSwimSpeed * sprintSpeedScale
 			+ Vector3.new(0, manualVerticalSpeed, 0)
+		-- Underwater currents (UnderwaterCurrents.client.lua) are added in
+		-- last, as one extra term on top of the player's own intended
+		-- velocity -- exactly like real current physics (ground speed =
+		-- your own speed + the water's speed), so swimming with a current
+		-- adds up and swimming against one genuinely fights it, with no
+		-- separate boost/resist logic needed. This is the only place
+		-- currents touch the swim system: everything below (depth hold,
+		-- rotation, animation state) already just reacts to fullVelocity,
+		-- so a current naturally banks the body and can even push the
+		-- Forward/Sprint animation the same way player input would,
+		-- without any of this code needing to know currents exist.
+		fullVelocity += CurrentField.GetVelocity()
 		rootPart.AssemblyLinearVelocity = fullVelocity
 		-- depthHold (a LinearVelocity constraint, Y axis only) is what
 		-- actually holds the vertical speed against gravity between frames;

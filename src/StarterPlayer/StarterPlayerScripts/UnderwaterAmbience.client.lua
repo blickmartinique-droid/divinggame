@@ -7,18 +7,27 @@
 -- water has zero ambiance anywhere except right next to the beach. Kept
 -- deliberately low-rate (a handful of particles at most) so it stays cheap
 -- and doesn't clutter the screen.
+--
+-- When the player is inside an underwater current, these particles pick up
+-- a small drift bias toward it (via CurrentField, the same value
+-- SwimController reads to push the player) so the surrounding water reads
+-- as moving too, not just the player -- scaled well down from the actual
+-- push so it stays a background detail.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
+local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local player = Players.LocalPlayer
 
 local CHECK_INTERVAL = 0.5
 local SEDIMENT_RATE = 4
 local BUBBLE_RATE = 1.5
+local BUBBLE_BASE_ACCELERATION = Vector3.new(0, 4, 0)
+local CURRENT_DRIFT_SCALE = 0.5
 
 local function createSedimentEmitter(rootPart)
 	local sediment = Instance.new("ParticleEmitter")
@@ -46,7 +55,7 @@ local function createBubbleEmitter(rootPart)
 	bubbles.Lifetime = NumberRange.new(2, 4)
 	bubbles.Speed = NumberRange.new(1, 2)
 	bubbles.SpreadAngle = Vector2.new(15, 15)
-	bubbles.Acceleration = Vector3.new(0, 4, 0)
+	bubbles.Acceleration = BUBBLE_BASE_ACCELERATION
 	bubbles.Size = NumberSequence.new(0.1)
 	bubbles.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0.5),
@@ -83,6 +92,13 @@ local function onCharacterAdded(character)
 			sediment.Rate = isActive and SEDIMENT_RATE or 0
 			bubbles.Rate = isActive and BUBBLE_RATE or 0
 		end
+
+		-- Subtle drift bias toward any current the player is currently in
+		-- (zero when there isn't one), so the water around the player
+		-- reads as moving too.
+		local currentDrift = CurrentField.GetVelocity() * CURRENT_DRIFT_SCALE
+		sediment.Acceleration = currentDrift
+		bubbles.Acceleration = BUBBLE_BASE_ACCELERATION + currentDrift
 	end)
 end
 
