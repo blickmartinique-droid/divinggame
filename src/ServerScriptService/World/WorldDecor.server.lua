@@ -11,8 +11,10 @@
 --   * Pinnacles: tall rock spires rising from the seafloor to various
 --     heights around the island, so the mid-water and deep zones have
 --     dark shapes looming through the fog instead of empty blue.
---   * Grottes arch and Épave wreck plateau: landmarks at the two example
---     current locations, so the currents visibly lead somewhere.
+--   * Grottes arch and Épave seafloor plateau: landmarks at two example
+--     current locations, so the currents visibly lead somewhere (the
+--     Épave plateau is also the foundation MegaWreckShip.server.lua's
+--     much bigger wreck sits on).
 --   * Abyss glow: a few bioluminescent nodes near the floor.
 
 local Workspace = game:GetService("Workspace")
@@ -159,18 +161,17 @@ for _, side in ipairs({ -1, 1 }) do
 end
 prop(arch, "ArchSpan", Vector3.new(100, 16, 24), CFrame.lookAt(archCenter + Vector3.new(0, 40, 0), archCenter + Vector3.new(0, 40, 0) + archDir) * CFrame.Angles(0, math.pi / 2, 0), Enum.Material.Slate, Color3.fromRGB(58, 66, 80))
 
--- Épave plateau + wreck silhouette ------------------------------------------------
+-- Épave seafloor plateau ------------------------------------------------------------
+-- The small hand-built Hull/Bow/Deckhouse/Mast placeholder that used to
+-- stand in for the wreck here has been replaced by the real, vastly
+-- bigger MegaWreckShip.server.lua (a full multi-deck ship reconstructed
+-- from an imported model) at this same spot -- only the seafloor rise it
+-- rests on stays, plus a scattering of period-appropriate debris around it.
 
 local wreck = folder("EpaveWreck")
 local wreckCenter = Vector3.new(150, -300, -150)
 prop(wreck, "Plateau", Vector3.new(160, 30, 140), CFrame.new(wreckCenter.X, wreckCenter.Y - 27, wreckCenter.Z), Enum.Material.Slate, Color3.fromRGB(52, 60, 72))
-local hullFrame = CFrame.new(wreckCenter + Vector3.new(0, -4, 0)) * CFrame.Angles(0, math.rad(35), math.rad(12))
 local hullColor = Color3.fromRGB(70, 55, 45)
-prop(wreck, "Hull", Vector3.new(14, 10, 60), hullFrame, Enum.Material.WoodPlanks, hullColor)
-prop(wreck, "Bow", Vector3.new(10, 8, 16), hullFrame * CFrame.new(0, 1, -36) * CFrame.Angles(0.35, 0, 0), Enum.Material.WoodPlanks, hullColor)
-prop(wreck, "Deckhouse", Vector3.new(8, 6, 14), hullFrame * CFrame.new(0, 8, 8), Enum.Material.WoodPlanks, hullColor)
-prop(wreck, "Mast", Vector3.new(1, 34, 1), hullFrame * CFrame.new(0, 20, -8) * CFrame.Angles(0, 0, 0.2), Enum.Material.Wood, Color3.fromRGB(60, 48, 40))
-prop(wreck, "Mast", Vector3.new(1, 26, 1), hullFrame * CFrame.new(0, 16, 14) * CFrame.Angles(0.1, 0, -0.15), Enum.Material.Wood, Color3.fromRGB(60, 48, 40))
 for _ = 1, 8 do
 	local size = 3 + math.random() * 6
 	prop(wreck, "Debris", Vector3.new(size, size * 0.4, size * 0.7), CFrame.new(wreckCenter + Vector3.new((math.random() - 0.5) * 120, -10 + size * 0.2, (math.random() - 0.5) * 100)) * randomRotation(), Enum.Material.WoodPlanks, hullColor)

@@ -67,6 +67,19 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   `CreatureSpawner.server.lua` (spawn par régions ou repli procédural, tick à
   faible fréquence avec LOD distance). Corps placeholder tant qu'aucun modèle
   n'est fourni.
+- **Épave géante (`MegaWreckShip`)** — `Workspace/World/Underwater/WreckZone/
+  MegaWreckShip`, un navire massif (~845×154×296 studs à l'échelle actuelle,
+  9 salles nommées sur plusieurs ponts, mâts, canons, escaliers). Reconstruit à
+  partir de `MegaWreckShipData.lua` (table auto-générée, 645 entrées :
+  nom/catégorie/position/rotation/taille/couleur, une par pièce du modèle
+  source) par `MegaWreckShip.server.lua`. Voir le commentaire en tête de ce
+  script pour la limite technique qui a motivé cette approche (boîtes
+  orientées plutôt que le maillage réel) et comment le remplacer pièce par
+  pièce par de vrais `MeshPart` si le modèle est importé plus tard dans
+  Studio. Brèches dans la coque (`EntryPoints`), salles de loot
+  (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une zone
+  de spawn de créatures (`Requin`/`Raie`) et des repères (`Landmarks`,
+  `InteractionPoints`) sont déjà en place.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
