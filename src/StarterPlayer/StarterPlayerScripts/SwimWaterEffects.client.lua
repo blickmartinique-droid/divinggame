@@ -28,6 +28,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 local MovementConfig = require(ReplicatedStorage.Shared.Config.MovementConfig)
+local GraphicsQuality = require(ReplicatedStorage.Shared.Modules.GraphicsQuality)
 
 local player = Players.LocalPlayer
 
@@ -41,6 +42,43 @@ local CURRENT_DRIFT_SCALE = 0.4
 local MOVEMENT_BUBBLES_MAX_RATE = 18
 local BREATH_MIN_INTERVAL = 2.5
 local BREATH_MAX_INTERVAL = 5.5
+-- Speed lines: thin streaks rushing past the player, from sprint speed up
+-- (so normal swimming stays clean) and stronger still when a current adds
+-- to the real speed. Single owner of this effect for both cases, since it
+-- reads the real velocity.
+local LINES_START_SPEED = 19
+local LINES_FULL_SPEED = 48
+local LINES_MAX_RATE = 34
+
+local function createSpeedLines(rootPart)
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "SwimSpeedLinesAttachment"
+	attachment.Parent = rootPart
+
+	local lines = Instance.new("ParticleEmitter")
+	lines.Name = "SwimSpeedLines"
+	lines.Rate = 0
+	lines.Lifetime = NumberRange.new(0.25, 0.45)
+	lines.Speed = NumberRange.new(16, 28)
+	lines.SpreadAngle = Vector2.new(30, 30)
+	lines.EmissionDirection = Enum.NormalId.Front
+	lines.Orientation = Enum.ParticleOrientation.VelocityParallel
+	lines.Squash = NumberSequence.new(-3)
+	lines.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.07),
+		NumberSequenceKeypoint.new(0.5, 0.11),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	lines.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.55),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	lines.Color = ColorSequence.new(Color3.fromRGB(220, 240, 245))
+	lines.LightEmission = 0.15
+	lines.LightInfluence = 0
+	lines.Parent = attachment
+	return attachment, lines
+end
 
 local function createBreathBubbles(head)
 	local emitter = Instance.new("ParticleEmitter")
@@ -131,6 +169,7 @@ local function onCharacterAdded(character)
 	wakeAttachment.Name = "SwimWakeAttachment"
 	wakeAttachment.Parent = rootPart
 	local wakeTurbulence = createWakeTurbulence(wakeAttachment)
+	local linesAttachment, speedLines = createSpeedLines(rootPart)
 
 	local movementRate = 0
 	local wakeRate = 0
@@ -155,13 +194,24 @@ local function onCharacterAdded(character)
 				wakeTurbulence.Rate = 0
 			end
 			breathBubbles.Rate = 0
+			speedLines.Rate = 0
 			previousDirection = nil
 			return
 		end
 
+		local particleScale = GraphicsQuality.Get().ParticleScale
 		local velocity = rootPart.AssemblyLinearVelocity
 		local speed = velocity.Magnitude
 		local speedFraction = math.clamp((speed - MIN_EFFECT_SPEED) / (FAST_SPEED_REF - MIN_EFFECT_SPEED), 0, 1)
+
+		-- Speed lines rush against the real direction of travel, spawned a
+		-- little ahead so they stream past the camera's view of the body.
+		local linesFraction = math.clamp((speed - LINES_START_SPEED) / (LINES_FULL_SPEED - LINES_START_SPEED), 0, 1)
+		speedLines.Rate = linesFraction * LINES_MAX_RATE * particleScale
+		if linesFraction > 0 and speed > 0.5 then
+			local direction = velocity / speed
+			linesAttachment.WorldCFrame = CFrame.lookAt(rootPart.Position + direction * 6, rootPart.Position - direction)
+		end
 
 		-- Breathing bubbles: independent of movement, just a slow irregular timer.
 		breathBubbles.Rate = 0
@@ -172,12 +222,12 @@ local function onCharacterAdded(character)
 		end
 
 		-- Movement bubbles: rate scales with speed, plus a burst on sharp turns.
-		local targetMovementRate = speedFraction * MOVEMENT_BUBBLES_MAX_RATE
+		local targetMovementRate = speedFraction * MOVEMENT_BUBBLES_MAX_RATE * particleScale
 		local rateAlpha = 1 - math.exp(-(1 / RATE_SMOOTH_TIME) * deltaTime)
 		movementRate = movementRate + (targetMovementRate - movementRate) * rateAlpha
 		movementBubbles.Rate = movementRate
 
-		local targetWakeRate = speedFraction * MOVEMENT_BUBBLES_MAX_RATE
+		local targetWakeRate = speedFraction * MOVEMENT_BUBBLES_MAX_RATE * particleScale
 		wakeRate = wakeRate + (targetWakeRate - wakeRate) * rateAlpha
 		wakeTurbulence.Rate = wakeRate
 

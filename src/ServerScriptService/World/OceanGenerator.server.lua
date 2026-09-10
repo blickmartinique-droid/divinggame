@@ -51,29 +51,80 @@ local floorMin = Vector3.new(-OCEAN_WIDTH / 2, SURFACE_Y - maxDepth - FLOOR_THIC
 local floorSize = Vector3.new(OCEAN_WIDTH, FLOOR_THICKNESS, OCEAN_WIDTH)
 fillChunked(floorMin, floorSize, Enum.Material.Rock)
 
--- Visual tuning: default Terrain water looks flat and murky. A deep
--- blue-teal with moderate waves and reflectance reads as an actual ocean
--- rather than a puddle, without tipping into a neon/artificial look --
--- these properties are global to the whole Terrain (shared by every
--- player), so the per-depth darkening is handled separately by
--- ZoneAnnouncer's Lighting/Atmosphere/fog, not by changing water color.
-terrain.WaterColor = Color3.fromRGB(10, 80, 95)
-terrain.WaterTransparency = 0.35
-terrain.WaterReflectance = 0.18
-terrain.WaterWaveSize = 0.45
-terrain.WaterWaveSpeed = 12
+-- Water look: a clear, saturated tropical teal with strong sky reflection
+-- and gentle waves -- stylised, not a murky "big blue block". Water colour
+-- is a global Terrain property shared by everyone, so the per-depth mood
+-- (darker, bluer, foggier) is layered on top by ZoneAnnouncer's Lighting /
+-- Atmosphere / ColorCorrection, which is per-client. Transparency stays
+-- moderate so the submerged shelf and reef silhouettes read through the
+-- surface from the beach, which is what makes the sea inviting.
+terrain.WaterColor = Color3.fromRGB(24, 132, 152)
+terrain.WaterTransparency = 0.55
+terrain.WaterReflectance = 0.42
+terrain.WaterWaveSize = 0.22
+terrain.WaterWaveSpeed = 9
 
--- Matches ZonesConfig's Récif entry exactly (depth 0's anchor point), so
--- there's no visual seam between this one-time default and the continuous
--- depth-based lighting ZoneAnnouncer takes over as soon as a character
--- exists.
+-- Stylised terrain palette: warm pale sand, saturated grass, cool slate
+-- rock. SetMaterialColor is free (no extra geometry or textures) and is
+-- the single biggest "this isn't default Roblox" win for the island.
+terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(236, 222, 186))
+terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(96, 168, 78))
+terrain:SetMaterialColor(Enum.Material.LeafyGrass, Color3.fromRGB(78, 150, 70))
+terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(86, 96, 108))
+terrain:SetMaterialColor(Enum.Material.Slate, Color3.fromRGB(70, 82, 96))
+terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(150, 130, 100))
+
+-- Sky and sun: a mid-afternoon sun low enough to throw long reflections
+-- and visible god rays underwater, a Sky instance so the sun disc / sky
+-- reflection are consistent, and shadows on for shape on the island.
+-- Matches ZonesConfig.Surface exactly (depth 0's anchor point), so there
+-- is no seam between this one-time default and the continuous depth
+-- lighting ZoneAnnouncer takes over as soon as a client is in.
 local Lighting = game:GetService("Lighting")
-Lighting.ClockTime = 14
-Lighting.Brightness = 3
-Lighting.Ambient = Color3.fromRGB(70, 90, 100)
-Lighting.OutdoorAmbient = Color3.fromRGB(130, 160, 170)
-Lighting.FogColor = Color3.fromRGB(110, 155, 165)
-Lighting.FogEnd = 850
+Lighting.ClockTime = 15.2
+Lighting.GeographicLatitude = 18
+Lighting.Brightness = 2.6
+Lighting.Ambient = Color3.fromRGB(118, 130, 140)
+Lighting.OutdoorAmbient = Color3.fromRGB(150, 175, 190)
+Lighting.FogColor = Color3.fromRGB(196, 222, 235)
+Lighting.FogEnd = 3200
+Lighting.ExposureCompensation = 0.1
+Lighting.GlobalShadows = true
+Lighting.ShadowSoftness = 0.35
+Lighting.EnvironmentDiffuseScale = 0.55
+Lighting.EnvironmentSpecularScale = 0.7
+
+local sky = Lighting:FindFirstChildOfClass("Sky")
+if not sky then
+	sky = Instance.new("Sky")
+	sky.Parent = Lighting
+end
+sky.SunAngularSize = 16
+sky.MoonAngularSize = 9
+sky.StarCount = 1500
+
+-- Bloom kept deliberately tight: only genuinely bright things (sun glints
+-- on the water, neon relics, abyss bioluminescence) bloom, nothing else.
+local bloom = Lighting:FindFirstChild("OceanBloom")
+if not bloom then
+	bloom = Instance.new("BloomEffect")
+	bloom.Name = "OceanBloom"
+	bloom.Parent = Lighting
+end
+bloom.Intensity = 0.35
+bloom.Size = 28
+bloom.Threshold = 1.6
+
+-- Soft dynamic clouds: cheap, and the sky stops being a flat gradient.
+local clouds = terrain:FindFirstChildOfClass("Clouds")
+if not clouds then
+	clouds = Instance.new("Clouds")
+	clouds.Parent = terrain
+end
+clouds.Cover = 0.42
+clouds.Density = 0.28
+clouds.Color = Color3.fromRGB(245, 248, 252)
+clouds.Enabled = true
 
 -- Natural beach at sea level, replacing the earlier raised floating island.
 -- A dry sand core (where the player spawns) pokes just above the waterline,
@@ -147,49 +198,93 @@ local beachPropsFolder = Instance.new("Folder")
 beachPropsFolder.Name = "BeachProps"
 beachPropsFolder.Parent = Workspace
 
-local ROCK_COUNT = 6
+local function beachProp(name, size, cframe, material, color, shape)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.CanTouch = false
+	part.Shape = shape or Enum.PartType.Block
+	part.Size = size
+	part.CFrame = cframe
+	part.Material = material
+	part.Color = color
+	part.Parent = beachPropsFolder
+	return part
+end
+
+local ROCK_COUNT = 9
 for i = 1, ROCK_COUNT do
 	local angle = (i / ROCK_COUNT) * math.pi * 2 + 0.3
-	local radius = BEACH_CORE_RADIUS - 25 + math.random() * 20
-	local rock = Instance.new("Part")
-	rock.Name = "BeachRock"
-	rock.Anchored = true
-	rock.Material = Enum.Material.Rock
-	rock.Color = Color3.fromRGB(110, 110, 105)
-	local size = 3 + math.random() * 3
-	rock.Size = Vector3.new(size, size * 0.7, size * 0.9)
-	rock.Position = Vector3.new(math.cos(angle) * radius, CORE_TOP_Y - 1, math.sin(angle) * radius)
-	rock.Orientation = Vector3.new(0, math.random(0, 360), 0)
-	rock.Parent = beachPropsFolder
+	local radius = BEACH_CORE_RADIUS - 30 + math.random() * 26
+	local size = 2.5 + math.random() * 4
+	beachProp(
+		"BeachRock",
+		Vector3.new(size, size * (0.5 + math.random() * 0.4), size * (0.7 + math.random() * 0.5)),
+		CFrame.new(math.cos(angle) * radius, CORE_TOP_Y - 0.6, math.sin(angle) * radius)
+			* CFrame.Angles((math.random() - 0.5) * 0.5, math.random() * math.pi * 2, (math.random() - 0.5) * 0.5),
+		Enum.Material.Slate,
+		Color3.fromRGB(96, 104, 112)
+	)
 end
 
-local PLANT_COUNT = 5
-for i = 1, PLANT_COUNT do
-	local angle = (i / PLANT_COUNT) * math.pi * 2
-	local radius = math.random() * (BEACH_CORE_RADIUS - 15)
-	local plant = Instance.new("Part")
-	plant.Name = "BeachPlant"
-	plant.Anchored = true
-	plant.CanCollide = false
-	plant.Material = Enum.Material.Grass
-	plant.Color = Color3.fromRGB(60, 120, 60)
-	plant.Size = Vector3.new(1, 2.5, 1)
-	plant.Position = Vector3.new(math.cos(angle) * radius, CORE_TOP_Y + 1, math.sin(angle) * radius)
-	plant.Parent = beachPropsFolder
+-- Stylised palms: a leaning trunk topped with a fan of drooping fronds.
+local PALM_COUNT = 7
+for i = 1, PALM_COUNT do
+	local angle = (i / PALM_COUNT) * math.pi * 2 + 0.7
+	local radius = 18 + math.random() * (BEACH_CORE_RADIUS - 40)
+	local base = Vector3.new(math.cos(angle) * radius, CORE_TOP_Y, math.sin(angle) * radius)
+	local height = 9 + math.random() * 5
+	local leanAngle = math.random() * math.pi * 2
+	local lean = CFrame.Angles(0, leanAngle, 0) * CFrame.Angles(math.rad(6 + math.random() * 8), 0, 0)
+	local trunkFrame = CFrame.new(base) * lean * CFrame.new(0, height / 2, 0)
+	local trunk = beachProp("PalmTrunk", Vector3.new(1.1, height, 1.1), trunkFrame, Enum.Material.Wood, Color3.fromRGB(128, 96, 66))
+	trunk.CanCollide = false
+	local crown = trunkFrame * CFrame.new(0, height / 2, 0)
+	for f = 1, 7 do
+		local frondAngle = (f / 7) * math.pi * 2 + math.random() * 0.4
+		local frondLength = 5 + math.random() * 2
+		local frond = beachProp(
+			"PalmFrond",
+			Vector3.new(0.9, 0.15, frondLength),
+			crown * CFrame.Angles(0, frondAngle, 0) * CFrame.Angles(math.rad(-28 - math.random() * 14), 0, 0) * CFrame.new(0, 0, -frondLength / 2),
+			Enum.Material.Grass,
+			Color3.fromRGB(70 + math.random(0, 25), 150 + math.random(0, 30), 60)
+		)
+		frond.CanCollide = false
+	end
 end
 
--- Atmosphere for a softer horizon/sky (cheap but effective realism boost).
+local BUSH_COUNT = 12
+for _ = 1, BUSH_COUNT do
+	local angle = math.random() * math.pi * 2
+	local radius = math.random() * (BEACH_CORE_RADIUS - 22)
+	local size = 1.4 + math.random() * 1.6
+	local bush = beachProp(
+		"BeachBush",
+		Vector3.new(size, size * 0.75, size),
+		CFrame.new(math.cos(angle) * radius, CORE_TOP_Y + size * 0.3, math.sin(angle) * radius),
+		Enum.Material.Grass,
+		Color3.fromRGB(80, 140 + math.random(0, 30), 65),
+		Enum.PartType.Ball
+	)
+	bush.CanCollide = false
+end
+
+-- Atmosphere for a softer horizon/sky (cheap but effective). Offset lifts
+-- the haze band up to the horizon so the sea meets the sky in a soft
+-- gradient instead of a hard line; Glare puts a warm halo round the sun.
+-- Density/Haze/Color/Decay are then driven per-depth by ZoneAnnouncer.
 local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
 if not atmosphere then
 	atmosphere = Instance.new("Atmosphere")
 	atmosphere.Parent = Lighting
 end
-atmosphere.Density = 0.3
-atmosphere.Offset = 0.25
-atmosphere.Color = Color3.fromRGB(199, 232, 247)
-atmosphere.Decay = Color3.fromRGB(106, 150, 168)
-atmosphere.Glare = 0.2
-atmosphere.Haze = 1.2
+atmosphere.Density = 0.32
+atmosphere.Offset = 0.42
+atmosphere.Color = Color3.fromRGB(205, 228, 242)
+atmosphere.Decay = Color3.fromRGB(96, 142, 168)
+atmosphere.Glare = 0.4
+atmosphere.Haze = 1.4
 
 -- Shore foam: a ring of small particle emitters lapping at the beach's
 -- waterline.
