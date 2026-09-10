@@ -94,6 +94,31 @@ local HULL_BREACH_UPPER = { ["-1_2"] = true }
 local SAIL_SKIP_EVERY = 3
 local SNAPPED_MAST_NAME = "mast_1" -- the one mast given an extra broken-looking lean
 
+-- Corridors were a passable but tight ~14x12-stud tube (raw 4x3.4 studs x
+-- SHIP_SCALE) -- fine, but "agrandir certains couloirs" is explicitly
+-- authorised and a wider tube reads much better at this monumental scale.
+-- Widens each segment's wall1/wall2/floor/ceiling around its own central
+-- axis (not the ship's), so segments at different heights/positions each
+-- widen correctly in place instead of drifting toward a shared origin.
+local CORRIDOR_WIDEN_FACTOR = 1.6
+
+-- Rooms an explorer should remember: warm lantern light instead of the
+-- default cool blue, per the brief's "quelques lumières chaudes très
+-- faibles dans certaines salles importantes."
+local WARM_ROOMS = { captain_suite = true, chart_room = true, bridge_hall = true }
+
+-- Lighting palette -- dark blue/cyan/turquoise throughout, warm lantern
+-- only in WARM_ROOMS above. Kept low-brightness/short-range/no-shadow by
+-- default (a "mega wreck" could otherwise mean hundreds of dynamic
+-- shadow-casters); CastShadow is only ever turned on for the handful of
+-- warm hero lights, where the shadow actually reads as a lantern-lit room.
+local COOL_LIGHT_COLOR = Color3.fromRGB(80, 180, 200)
+local WARM_LIGHT_COLOR = Color3.fromRGB(255, 185, 120)
+local ENTRANCE_LIGHT_COLOR = Color3.fromRGB(150, 215, 235)
+local NAV_LOW_COLOR = Color3.fromRGB(85, 165, 185)
+local NAV_HIGH_COLOR = Color3.fromRGB(150, 195, 180)
+local AMBIENT_LIGHT_COLOR = Color3.fromRGB(70, 140, 130)
+
 -- Folders -----------------------------------------------------------------------
 
 local function ensureFolder(parent: Instance, name: string): Folder
@@ -144,6 +169,17 @@ local entryPointsFolder = ensureFolder(shipFolder, "EntryPoints")
 local landmarksFolder = ensureFolder(shipFolder, "Landmarks")
 local lootSpotsFolder = ensureFolder(shipFolder, "LootSpots")
 local interactionPointsFolder = ensureFolder(shipFolder, "InteractionPoints")
+
+-- Interior lighting rework (see the bottom of this script): organised per
+-- the requested spec, adapted to this file's existing layout -- Rooms/
+-- Corridors/Stairs already live under Interior and are reused/widened in
+-- place rather than duplicated into a separate "ReworkedInterior" tree.
+local lightingFolder = ensureFolder(shipFolder, "Lighting")
+local corridorLightsFolder = ensureFolder(lightingFolder, "CorridorLights")
+local roomLightsFolder = ensureFolder(lightingFolder, "RoomLights")
+local entranceLightsFolder = ensureFolder(lightingFolder, "EntranceLights")
+local navigationLightsFolder = ensureFolder(lightingFolder, "NavigationLights")
+local ambientLightsFolder = ensureFolder(lightingFolder, "AmbientLights")
 
 local CATEGORY_FOLDERS = {
 	Hull = hullFolder,
@@ -221,15 +257,71 @@ local function buildPart(record, parent: Instance, overrides: { [string]: any }?
 	return part
 end
 
+-- Corridor widening pre-pass: pushes each segment's wall1/wall2 (offset
+-- from the corridor's own centerline in raw Y) and floor/ceiling (offset
+-- in raw Z) outward by CORRIDOR_WIDEN_FACTOR, growing their Size to match
+-- -- widening around each segment's OWN axis (not the ship's shared
+-- origin), since the 3 segments sit at different heights/positions.
+local corridorOverride = {} -- [recordName] = { Center: Vector3, Size: Vector3 }
+do
+	local segments = {}
+	for _, record in ipairs(WreckData) do
+		if record.Category == "Corridors" then
+			local segmentName, part = record.Name:match("^(corridor_%d+)_(%a+)$")
+			if segmentName then
+				segments[segmentName] = segments[segmentName] or {}
+				segments[segmentName][part] = record
+			end
+		end
+	end
+
+	for _, seg in pairs(segments) do
+		if seg.floor and seg.ceiling and seg.wall1 and seg.wall2 then
+			local centerZ = (seg.floor.Center.Z + seg.ceiling.Center.Z) / 2
+			corridorOverride[seg.wall1.Name] = {
+				Center = Vector3.new(seg.wall1.Center.X, seg.wall1.Center.Y * CORRIDOR_WIDEN_FACTOR, seg.wall1.Center.Z),
+				Size = Vector3.new(seg.wall1.Size.X, seg.wall1.Size.Y, seg.wall1.Size.Z * CORRIDOR_WIDEN_FACTOR),
+			}
+			corridorOverride[seg.wall2.Name] = {
+				Center = Vector3.new(seg.wall2.Center.X, seg.wall2.Center.Y * CORRIDOR_WIDEN_FACTOR, seg.wall2.Center.Z),
+				Size = Vector3.new(seg.wall2.Size.X, seg.wall2.Size.Y, seg.wall2.Size.Z * CORRIDOR_WIDEN_FACTOR),
+			}
+			corridorOverride[seg.floor.Name] = {
+				Center = Vector3.new(seg.floor.Center.X, seg.floor.Center.Y, centerZ + (seg.floor.Center.Z - centerZ) * CORRIDOR_WIDEN_FACTOR),
+				Size = Vector3.new(seg.floor.Size.X, seg.floor.Size.Y * CORRIDOR_WIDEN_FACTOR, seg.floor.Size.Z),
+			}
+			corridorOverride[seg.ceiling.Name] = {
+				Center = Vector3.new(seg.ceiling.Center.X, seg.ceiling.Center.Y, centerZ + (seg.ceiling.Center.Z - centerZ) * CORRIDOR_WIDEN_FACTOR),
+				Size = Vector3.new(seg.ceiling.Size.X, seg.ceiling.Size.Y * CORRIDOR_WIDEN_FACTOR, seg.ceiling.Size.Z),
+			}
+		end
+	end
+end
+
+local function applyCorridorWiden(record)
+	local override = corridorOverride[record.Name]
+	if not override then
+		return record
+	end
+	return {
+		Name = record.Name, Category = record.Category, Room = record.Room,
+		Center = override.Center, Right = record.Right, Up = record.Up,
+		Size = override.Size, Color = record.Color,
+	}
+end
+
 -- Hull skin: skip the chosen breach segments entirely (a real hole), mark
 -- the model's own big cross-section slabs (hull_layer_*) as invisible and
 -- moved into Collision instead of the visible Hull folder -- those are
 -- the actual outer hull collider (see the header comment for why).
 local roomRecords = {} -- [roomName] = { record, ... }
 local mastRecordByName = {}
+local corridorParts = {} -- [segmentName] = { floor=Part, ceiling=Part }
+local stairParts = {} -- [stairName] = Part
 local sailIndex = 0
 
-for _, record in ipairs(WreckData) do
+for _, rawRecord in ipairs(WreckData) do
+	local record = applyCorridorWiden(rawRecord)
 	if record.Category == "Hull" and record.Name:match("^hull_layer_") then
 		-- Skipped entirely -- see the header comment: these are big central
 		-- slabs, not a thin exterior shell, and were the cause of the
@@ -277,7 +369,17 @@ for _, record in ipairs(WreckData) do
 
 	local folder = CATEGORY_FOLDERS[record.Category]
 	if folder then
-		buildPart(record, folder)
+		local part = buildPart(record, folder)
+
+		if record.Category == "Corridors" then
+			local segmentName, piece = record.Name:match("^(corridor_%d+)_(%a+)$")
+			if segmentName then
+				corridorParts[segmentName] = corridorParts[segmentName] or {}
+				corridorParts[segmentName][piece] = part
+			end
+		elseif record.Category == "Stairs" then
+			stairParts[record.Name] = part
+		end
 	end
 end
 
@@ -304,15 +406,22 @@ local ROOM_DISPLAY_NAMES = {
 }
 
 local roomFloorRecord = {} -- [roomName] = the room's own "_floor" record, for LootSpots below
+local roomParts = {} -- [roomName] = { ceiling=Part, wall_x1=Part, wall_x2=Part, wall_y1a=Part, ... }
 
 for roomName, records in pairs(roomRecords) do
 	local roomFolder = Instance.new("Folder")
 	roomFolder.Name = ROOM_DISPLAY_NAMES[roomName] or roomName
 	roomFolder.Parent = roomsFolder
+	roomParts[roomName] = {}
 	for _, record in ipairs(records) do
-		buildPart(record, roomFolder, { CanCollide = true })
+		local part = buildPart(record, roomFolder, { CanCollide = true })
 		if record.Name:match("_floor$") then
 			roomFloorRecord[roomName] = record
+			roomParts[roomName].floor = part
+		elseif record.Name:match("_ceiling$") then
+			roomParts[roomName].ceiling = part
+		elseif record.Name:match("_wall_(.+)$") then
+			roomParts[roomName][record.Name:match("_wall_(.+)$")] = part
 		end
 	end
 end
@@ -485,6 +594,124 @@ local function scatterDebris()
 	end
 end
 scatterDebris()
+
+-- Interior lighting rework -----------------------------------------------------------
+-- The interior previously had zero light sources of its own -- just the
+-- Épave zone's own very dim ambient (Brightness ~0.55, see ZonesConfig),
+-- which is why it read as near-pitch-black. This adds small, cheap,
+-- mostly-shadowless lights guiding the player through it, dark blue/cyan/
+-- turquoise throughout with a warm lantern accent only in WARM_ROOMS --
+-- never a bright, evenly-lit interior, just enough to read the space.
+--
+-- Every light needs a real position, which in Roblox means being parented
+-- (directly or via an Attachment) to a BasePart -- but the brief also asks
+-- for all of them filed under Lighting/<Category>, not scattered as
+-- children of the room/corridor geometry they illuminate. Both at once:
+-- each light gets its own small invisible anchor Part, positioned with the
+-- exact same CFrame-offset math used everywhere else in this script
+-- (`hostPart.CFrame * CFrame.new(localOffset)`), then parented straight
+-- into the right Lighting subfolder -- correct position, correct folder,
+-- and the anchor moves/deletes cleanly with the rest of the ship on a
+-- rebuild since it's real Instance-tree content, not a loose reference.
+local function createLightAnchor(folder: Instance, name: string, worldCFrame: CFrame): BasePart
+	local anchor = Instance.new("Part")
+	anchor.Name = name
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.CastShadow = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.new(0.5, 0.5, 0.5)
+	anchor.CFrame = worldCFrame
+	anchor.Parent = folder
+	return anchor
+end
+
+local function addLightAt(folder: Instance, name: string, hostPart: BasePart, localOffset: Vector3, color: Color3, brightness: number, range: number, castShadow: boolean?)
+	local anchor = createLightAnchor(folder, name, hostPart.CFrame * CFrame.new(localOffset))
+	local light = Instance.new("PointLight")
+	light.Color = color
+	light.Brightness = brightness
+	light.Range = range
+	light.Shadows = castShadow == true
+	light.Parent = anchor
+	return light
+end
+
+local corridorLightCount, roomLightCount, entranceLightCount, navLightCount, ambientLightCount = 0, 0, 0, 0, 0
+
+-- Corridors: 3 lights spread along each segment's own length (using its
+-- own ceiling part, whatever its length/position/height -- so this works
+-- unchanged if CORRIDOR_WIDEN_FACTOR above ever changes), dimmer at the
+-- ends and brightest towards the middle third, so a corridor never goes
+-- fully dark along its run without looking like an evenly-lit hallway.
+for segmentName, parts in pairs(corridorParts) do
+	if parts.ceiling then
+		local length = parts.ceiling.Size.X
+		for i, fraction in ipairs({ -0.32, 0, 0.32 }) do
+			addLightAt(corridorLightsFolder, segmentName .. "_Light" .. i, parts.ceiling, Vector3.new(length * fraction, 0, 0), COOL_LIGHT_COLOR, 0.7, 16, false)
+			corridorLightCount += 1
+		end
+	end
+end
+
+-- Rooms: a light near one doorway (wall_y1a, "près de l'entrée"), one at
+-- the far wall (wall_x2, "vers le fond" -- creates real depth instead of
+-- one flat centered glow), and a ceiling light -- warm and shadow-casting
+-- in the 3 memorable rooms, dim cool fill everywhere else.
+for roomName, parts in pairs(roomParts) do
+	local isWarm = WARM_ROOMS[roomName]
+	local color = isWarm and WARM_LIGHT_COLOR or COOL_LIGHT_COLOR
+	if parts.y1a then
+		addLightAt(roomLightsFolder, roomName .. "_Entry", parts.y1a, Vector3.new(), COOL_LIGHT_COLOR, 0.6, 14, false)
+		roomLightCount += 1
+	end
+	if parts.x2 then
+		addLightAt(roomLightsFolder, roomName .. "_Far", parts.x2, Vector3.new(), color, isWarm and 1.0 or 0.6, isWarm and 20 or 14, false)
+		roomLightCount += 1
+	end
+	if parts.ceiling then
+		addLightAt(roomLightsFolder, roomName .. "_Ceiling", parts.ceiling, Vector3.new(), color, isWarm and 1.3 or 0.5, isWarm and 24 or 15, isWarm == true)
+		roomLightCount += 1
+	end
+end
+
+-- A soft, low fill light in the two biggest rooms only, so they don't
+-- read as a flat-lit box or a single glowing point in a void -- everywhere
+-- else stays legitimately darker corner-to-corner, per "je veux parfois
+-- avoir des zones presque noires."
+for _, roomName in ipairs({ "cargo_hall", "ballroom_lounge" }) do
+	local parts = roomParts[roomName]
+	if parts and parts.floor then
+		addLightAt(ambientLightsFolder, roomName .. "_Ambient", parts.floor, Vector3.new(0, 6, 0), AMBIENT_LIGHT_COLOR, 0.35, 34, false)
+		ambientLightCount += 1
+	end
+end
+
+-- Entrances: brighter, slightly wider-range cool light at each breach --
+-- reads as real (if dim) light leaking in from the ocean outside, and
+-- doubles as a beacon guiding the player back toward an exit from inside.
+for _, marker in ipairs(entryPointsFolder:GetChildren()) do
+	if marker:IsA("BasePart") then
+		addLightAt(entranceLightsFolder, marker.Name .. "_Light", marker, Vector3.new(), ENTRANCE_LIGHT_COLOR, 1.3, 30, false)
+		entranceLightCount += 1
+	end
+end
+
+-- Stairs: a light at the bottom and a slightly warmer/brighter one at the
+-- top of every flight, so a change in level -- the easiest thing to miss
+-- while swimming in 3D -- is always visibly marked at both ends.
+for stairName, stairPart in pairs(stairParts) do
+	local halfHeight = stairPart.Size.Y / 2
+	addLightAt(navigationLightsFolder, stairName .. "_Bottom", stairPart, Vector3.new(0, -halfHeight * 0.8, 0), NAV_LOW_COLOR, 0.6, 14, false)
+	addLightAt(navigationLightsFolder, stairName .. "_Top", stairPart, Vector3.new(0, halfHeight * 0.8, 0), NAV_HIGH_COLOR, 0.8, 16, false)
+	navLightCount += 2
+end
+
+print(string.format("[MegaWreckShip] lighting: %d corridor, %d room, %d entrance, %d navigation, %d ambient (%d total)",
+	corridorLightCount, roomLightCount, entranceLightCount, navLightCount, ambientLightCount,
+	corridorLightCount + roomLightCount + entranceLightCount + navLightCount + ambientLightCount))
 
 -- The ship is centered on the exact spot EpaveVortex (CurrentGenerator
 -- .server.lua) already occupied, so without this the vortex would swirl
