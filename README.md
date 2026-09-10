@@ -80,6 +80,19 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une zone
   de spawn de créatures (`Requin`/`Raie`) et des repères (`Landmarks`,
   `InteractionPoints`) sont déjà en place.
+- **4 régions montagnes/grottes** — `Workspace/World/Underwater/CaveRegions`,
+  reconstruites à partir de 4 modèles source (blockout, v2, v3 avec entrées, v4
+  entrées visibles) par `CaveRegionBuilder.lua` (partagé) + `CaveRegion1..4Data.lua`
+  (données auto-générées) + `CaveRegions.server.lua` (placement des 4 + courants
+  de liaison). Contrairement à `MegaWreckShip` (boîtes), ce sont ici de vrais
+  volumes de **Terrain** (Rock plein, Water creusé pour les grottes/tunnels) —
+  voir le commentaire en tête de `CaveRegionBuilder.lua` pour pourquoi (modèles
+  volontairement "blockout", le Terrain lissé de Roblox rend un résultat organique
+  là où des Parts auraient gardé un look cubique). Chaque région a ses vraies
+  entrées (jamais de trou visuel sans tunnel derrière — chaque brèche est
+  activement creusée jusqu'à la caverne centrale), ses ruines/terrasses/coraux
+  (Parts), ses `LootSpots`/zone de créatures (`SpawnRegion`, comme pour l'épave)
+  et ne touche jamais à `MegaWreckShip`.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
