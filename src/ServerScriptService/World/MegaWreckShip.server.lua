@@ -18,19 +18,26 @@
 --
 -- Hierarchy (matches the requested spec): Workspace/World/Underwater/
 -- WreckZone/MegaWreckShip, with two organisational parents --
---   Exterior: Hull, Railings, Masts, BrokenSails, Rigging, Cannons,
---             Decoration, Debris (all CanCollide = false: the ship's
---             outer skin is deliberately made of many overlapping/curved
---             segments, which as real colliders would catch the player on
---             every seam; see Collision below for what actually blocks
---             movement outside).
+--   Exterior: Hull (CanCollide = true -- see below), Railings, Masts,
+--             BrokenSails, Rigging, Cannons, Decoration, Debris
+--             (CanCollide = false: fiddly detail nobody should catch on).
 --   Interior: Decks, Corridors, Rooms, Stairs (CanCollide = true: these
---             are literally the floor/ceiling/wall/step plates, already
---             good simple colliders with no seams to catch on).
--- plus Collision (a handful of the model's own big hull-cross-section
--- slabs, reused as the real outer hull collider instead of the fine
--- hull-skin segments), and EntryPoints / LootSpots / Landmarks /
--- InteractionPoints -- Attachments/marker Parts for future systems.
+--             are literally the floor/ceiling/wall/step plates).
+-- plus Collision (currently unused -- see below), and EntryPoints /
+-- LootSpots / Landmarks / InteractionPoints -- Attachments/marker Parts
+-- for future systems.
+--
+-- Hull collision: the model's own hull_wall_<side>_<station> and
+-- hull_wall_upper_<side>_<station> segments (16 total minus whichever are
+-- breached) ARE the hull collider -- individually correctly sized/placed
+-- panels of the real skin, so a breach (skipped at creation, both here and
+-- as a visual) is a genuine hole in the collision too, not just the
+-- visuals. An earlier version instead reused the model's 4 "hull_layer_*"
+-- pieces as one big simplified invisible collider per side; those turned
+-- out to be near-full-length, near-full-height CENTRAL slabs (not thin
+-- exterior shells), so as colliders they formed one solid, un-breached
+-- wall straight through the ship's midline -- exactly what made the wreck
+-- impossible to enter. They are now skipped entirely (see below).
 --
 -- Scale/placement/tilt/damage staging are the only "artistic" numbers
 -- here; the geometry itself is 100% data-driven from the source model.
@@ -42,11 +49,29 @@ local WreckData = require(script.Parent.MegaWreckShipData)
 
 -- Placement -------------------------------------------------------------------
 
+-- The source model's own vertical axis is its Z, not Y: raw Y is a
+-- narrow, symmetric ~-18..18 range (the hull's BEAM, symmetric about the
+-- centerline) while raw Z is a tall, asymmetric ~-12.5..58 range (keel to
+-- masthead) -- confirmed beyond doubt by the masts, whose long axis (34-46
+-- studs) is their Size.Z, with only a ~3-stud pole diameter on X/Y. Every
+-- record's Center/Right/Up is therefore run through remapAxes (swap Y and
+-- Z) before use, so the ship's real height ends up along Roblox's +Y
+-- instead of sideways along Z. Sizes need no remap -- swapping which
+-- world axis a local direction vector points along doesn't change how far
+-- the box extends along it.
+local function remapAxes(v: Vector3): Vector3
+	return Vector3.new(v.X, v.Z, v.Y)
+end
+
 -- Right next to EpaveVortex (CurrentGenerator.server.lua) and the small
 -- placeholder silhouette WorldDecor used to build here (now removed in
--- favour of this) -- the existing Épave zone's landmark slot.
-local SHIP_CENTER = Vector3.new(150, -300, -150)
-local SHIP_SCALE = 4.2 -- raw model is ~201x36x70 studs; scaled up to ~845x153x296, a true biome-scale wreck
+-- favour of this) -- the existing Épave zone's landmark slot. Raw model
+-- is ~201 long x ~70.5 tall x ~36.4 beam (see remapAxes above); at this
+-- scale that is ~724 x ~254 x ~131 studs -- masts reaching up toward
+-- Grottes, keel resting near the bottom of Épave, still comfortably a
+-- biome-scale landmark without spanning all the way to the surface.
+local SHIP_CENTER = Vector3.new(150, -359, -150)
+local SHIP_SCALE = 3.6
 local SHIP_ROLL = math.rad(15) -- listing to one side, like it settled on the seabed
 local SHIP_PITCH = math.rad(4) -- very slightly bow-down
 local SHIP_YAW = math.rad(35) -- off the world axes, reads as "settled" rather than neatly placed
@@ -111,7 +136,10 @@ local decksFolder = ensureFolder(interiorFolder, "Decks")
 local corridorsFolder = ensureFolder(interiorFolder, "Corridors")
 local roomsFolder = ensureFolder(interiorFolder, "Rooms")
 local stairsFolder = ensureFolder(interiorFolder, "Stairs")
-local collisionFolder = ensureFolder(shipFolder, "Collision")
+-- Kept empty for now (see the header comment on hull collision above) --
+-- reserved for real simplified colliders if/when the model is imported
+-- for real and needs a proper low-poly physics proxy.
+ensureFolder(shipFolder, "Collision")
 local entryPointsFolder = ensureFolder(shipFolder, "EntryPoints")
 local landmarksFolder = ensureFolder(shipFolder, "Landmarks")
 local lootSpotsFolder = ensureFolder(shipFolder, "LootSpots")
@@ -130,12 +158,11 @@ local CATEGORY_FOLDERS = {
 	Stairs = stairsFolder,
 }
 
--- CanCollide = false for exterior skin/detail categories (many overlapping
--- curved segments -- real colliders here would catch the player on every
--- seam); true for interior floor/ceiling/wall/step plates, which are
--- already good simple colliders with no such seams.
+-- CanCollide = false for exterior detail categories nobody should catch
+-- on while swimming past (rigging, rails, loose cannons, decoration).
+-- Hull is deliberately NOT in this list: its individual skin segments are
+-- the ship's real hull collider (see the header comment above).
 local EXTERIOR_NO_COLLIDE = {
-	Hull = true,
 	Railings = true,
 	Masts = false, -- a mast is a single clean cylinder-ish shape; fine to collide with
 	BrokenSails = true,
@@ -165,7 +192,7 @@ local CATEGORY_MATERIAL = {
 -- Building ------------------------------------------------------------------------
 
 local function partCFrame(record)
-	return shipCFrame * CFrame.fromMatrix(record.Center * SHIP_SCALE, record.Right, record.Up)
+	return shipCFrame * CFrame.fromMatrix(remapAxes(record.Center) * SHIP_SCALE, remapAxes(record.Right), remapAxes(record.Up))
 end
 
 local function partSize(record)
@@ -204,7 +231,9 @@ local sailIndex = 0
 
 for _, record in ipairs(WreckData) do
 	if record.Category == "Hull" and record.Name:match("^hull_layer_") then
-		buildPart(record, collisionFolder, { Transparency = 1, CanCollide = true, CanQuery = false, CastShadow = false })
+		-- Skipped entirely -- see the header comment: these are big central
+		-- slabs, not a thin exterior shell, and were the cause of the
+		-- "can't get in, invisible wall" bug when used as a collider.
 		continue
 	end
 
@@ -316,7 +345,7 @@ local function createMarker(parent: Instance, name: string, worldPosition: Vecto
 end
 
 local function worldPositionOf(record)
-	return (shipCFrame * CFrame.new(record.Center * SHIP_SCALE)).Position
+	return (shipCFrame * CFrame.new(remapAxes(record.Center) * SHIP_SCALE)).Position
 end
 
 -- Entry points: one per breached hull segment, found by name from the raw data.
@@ -403,7 +432,7 @@ do
 	exteriorRegion.CanQuery = false
 	exteriorRegion.CanTouch = false
 	exteriorRegion.Transparency = 1
-	exteriorRegion.Size = Vector3.new(1100, 220, 500)
+	exteriorRegion.Size = Vector3.new(950, 330, 350) -- comfortably covers the ~724x254x131 ship with margin
 	exteriorRegion.CFrame = shipCFrame
 	exteriorRegion.Parent = shipFolder
 	CollectionService:AddTag(exteriorRegion, "SpawnRegion")
@@ -416,12 +445,16 @@ end
 -- Debris field: fallen crates/barrels/planks scattered on the seabed
 -- around the hull, plus the pieces the hull breaches "lost" -- same
 -- simple-primitive style as WorldDecor.server.lua's other set dressing.
+-- Authored directly in the same corrected local convention as everything
+-- else (X = length, Y = true vertical, Z = beam -- see remapAxes above),
+-- then scaled once like every other local offset in this script. Keel
+-- bottom is at raw Y (post-remap) ~-12.5, so -18..-8 sits at/just below it.
 local function scatterDebris()
-	local halfLength = 100 * SHIP_SCALE * 0.5
+	local halfLength = 100 -- raw studs; half the ~201-stud hull length
 	for i = 1, 40 do
 		local along = (math.random() - 0.5) * halfLength * 2
-		local across = (math.random() - 0.5) * 160
-		local local_ = Vector3.new(along, -75 + math.random() * 20, across)
+		local across = (math.random() - 0.5) * 40 -- raw studs; a bit wider than the ~36 beam
+		local local_ = Vector3.new(along, -18 + math.random() * 10, across) * SHIP_SCALE
 		local worldPos = (shipCFrame * CFrame.new(local_)).Position
 		local kind = math.random()
 		local size = 1.5 + math.random() * 3
@@ -459,15 +492,16 @@ scatterDebris()
 -- inside its hull cross-section (see hull_layer_0's Center in the data).
 -- Nudges the vortex's Position only -- radius/tier/spin/every other
 -- gameplay Attribute stays exactly what CurrentGenerator gave it -- to a
--- point just aft of the stern in open water (stern's local X is ~-77;
--- -110 clears it). CurrentGenerator and this script are separate top-level
--- Scripts with no guaranteed run order, hence WaitForChild rather than an
--- immediate FindFirstChild.
+-- point just aft of the stern in open water (stern's raw local X is ~-77;
+-- -95 clears it, then scaled once like every other local offset here).
+-- CurrentGenerator and this script are separate top-level Scripts with no
+-- guaranteed run order, hence WaitForChild rather than an immediate
+-- FindFirstChild.
 task.spawn(function()
 	local currentsFolder = Workspace:WaitForChild("Currents", 5)
 	local vortex = currentsFolder and currentsFolder:WaitForChild("EpaveVortex", 5)
 	if vortex then
-		vortex.Position = (shipCFrame * CFrame.new(-110, 5, 20)).Position
+		vortex.Position = (shipCFrame * CFrame.new(Vector3.new(-95, 5, 20) * SHIP_SCALE)).Position
 	end
 end)
 
