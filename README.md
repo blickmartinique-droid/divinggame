@@ -46,12 +46,21 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 - **Écran de mort** — `DeathScreen.client.lua` : overlay flou + message,
   déclenché actuellement par la noyade, prêt pour toute future source de dégâts.
 
-- **Courants sous-marins** — `CurrentGenerator.server.lua` place des zones
-  (Parts + Attributes, dupliquables dans Studio) directionnelles ou en vortex ;
-  `UnderwaterCurrents.client.lua` calcule la poussée et la publie via
-  `CurrentField` (vitesse, courant dominant, signaux `Entered`/`Exited`/`Changed`
-  pour brancher sons/VFX/HUD). `CurrentVortexAnimator.client.lua` anime les
-  vortex côté client (aucun trafic réseau).
+- **Courants sous-marins** — trois formes (`Directional` : boîte orientée,
+  `Circular` : vortex, `Path` : chemin à nœuds `CurrentPoint_01..N` — droit,
+  vertical, diagonal, virages, plusieurs segments), entièrement décrites par des
+  Attributes (`CurrentTier`, `CurrentMaxSpeed`, `CurrentAcceleration`,
+  `CurrentExitDeceleration`, `CurrentCentering`, `CurrentWidth`,
+  `CurrentVisualIntensity`, `CurrentDisplayName`, `CurrentSoundId`… voir
+  `CurrentsConfig.lua`). `CurrentGenerator.server.lua` construit les visuels de
+  tout ce qui se trouve dans `Workspace/Currents` (exemples générés **et**
+  courants posés à la main) ; `UnderwaterCurrents.client.lua` calcule la poussée
+  (entrée/sortie progressives, direction lissée, recentrage sur la trajectoire,
+  plafond de sécurité) et la publie via `CurrentField` (vitesse, courant
+  dominant, signaux `Entered`/`Exited`/`Changed`). `CurrentVisualAnimator.client.lua`
+  anime les anneaux de trajectoire et les vortex côté client ;
+  `CurrentFeedback.client.lua` gère le léger élargissement du FOV, les traits de
+  vitesse et le son optionnel.
 - **Créatures** — `CreaturesConfig.lua` (espèces : profondeur, rareté,
   comportement Passive/Skittish/Predator, vitesses, dégâts),
   `CreatureBrain.lua` (errance / fuite / poursuite / attaque) et
@@ -71,11 +80,14 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   (ou sa sphère) est le volume ; il peut vivre dans le modèle de l'épave, de la
   grotte… Dès qu'une région d'un type existe, le placement procédural de ce type
   est désactivé.
-- **Courants** : dupliquer un Part de `Workspace/Currents` et ajuster ses
-  Attributes (`CurrentShape`, `CurrentFlowSpeed`, `CurrentRadius`,
-  `CurrentDisplayName`…) ; le visuel est construit par `CurrentGenerator` — pour
-  un courant placé à la main, le plus simple reste d'ajouter une entrée dans ce
-  script.
+- **Courants** : créer le dossier `Workspace/Currents` s'il n'existe pas, y
+  placer un Part (`CurrentShape = Directional` : la boîte est la zone, sa face
+  avant la direction ; ou `Circular` + `CurrentRadius`) ou un Model
+  (`CurrentShape = Path`) contenant des Parts `CurrentPoint_01`, `_02`… ; régler
+  `CurrentTier` (`Weak`/`Medium`/`Strong`/`FastLane`) et, si besoin, les
+  Attributes individuels. Aucun script à modifier : visuels, physique et HUD
+  suivent l'instance. Rien de posé à la main n'est jamais supprimé par le
+  générateur.
 
 ### Pas encore construit
 

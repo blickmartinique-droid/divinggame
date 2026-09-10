@@ -163,9 +163,9 @@ currentLabel.Text = ""
 currentLabel.Visible = false
 currentLabel.Parent = container
 
-local TIER_LABELS = { Weak = "faible", Medium = "moyen", Strong = "fort" }
+local TIER_LABELS = { Weak = "faible", Medium = "moyen", Strong = "fort", FastLane = "voie rapide" }
 
-local function showCurrent(currentPart: BasePart)
+local function showCurrent(currentPart: Instance)
 	local name = currentPart:GetAttribute("CurrentDisplayName") or currentPart.Name
 	local tier = TIER_LABELS[currentPart:GetAttribute("CurrentTier")] or ""
 	currentLabel.Text = string.format("🌊 %s (%s)", name, tier)

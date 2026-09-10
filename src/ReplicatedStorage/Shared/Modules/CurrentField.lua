@@ -10,14 +10,15 @@
 -- "Dominant" current = the single zone contributing the most push right
 -- now. Entered fires when that goes from nil to a zone, Exited when it goes
 -- back to nil, Changed when it switches directly from one zone to another.
--- Each signal passes the current's marker Part, so listeners can read any
--- Attribute on it (CurrentTier, CurrentDisplayName, CurrentFlowSpeed, or
--- custom ones added in Studio) to decide what to do.
+-- Each signal passes the current's instance (a Part, or a Model for Path
+-- currents), so listeners can read any Attribute on it (CurrentTier,
+-- CurrentDisplayName, CurrentMaxSpeed, CurrentSoundId, or custom ones
+-- added in Studio) to decide what to do.
 
 local CurrentField = {}
 
 local velocity = Vector3.new()
-local dominantCurrent: BasePart? = nil
+local dominantCurrent: Instance? = nil
 local influence = 0
 
 local enteredEvent = Instance.new("BindableEvent")
@@ -38,7 +39,7 @@ end
 
 -- influence: 0-1, how deep inside the dominant current the player is (its
 -- smoothstep falloff), for effects that want to fade in with it.
-function CurrentField.SetDominantCurrent(current: BasePart?, newInfluence: number)
+function CurrentField.SetDominantCurrent(current: Instance?, newInfluence: number)
 	influence = newInfluence
 	if current == dominantCurrent then
 		return
@@ -56,7 +57,7 @@ function CurrentField.SetDominantCurrent(current: BasePart?, newInfluence: numbe
 	end
 end
 
-function CurrentField.GetDominantCurrent(): BasePart?
+function CurrentField.GetDominantCurrent(): Instance?
 	return dominantCurrent
 end
 

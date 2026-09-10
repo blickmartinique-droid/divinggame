@@ -1,28 +1,33 @@
 -- Computes how much the underwater currents in Workspace.Currents push the
 -- local player, and publishes the result through CurrentField for
 -- SwimController to add into its own velocity. This script only reads
--- world data (the current marker Parts placed by CurrentGenerator.server.lua
--- and their Attributes) and does local vector math -- it never touches the
+-- world data (the current instances and their Attributes, see
+-- CurrentsConfig.lua) and does local vector math -- it never touches the
 -- character, camera, or animations directly, and never writes to
 -- AssemblyLinearVelocity or CFrame itself. SwimController remains the sole
 -- owner of the character's actual movement and rotation; this just hands it
 -- one extra velocity to fold in, the same way it already combines camera
 -- input and manual vertical control.
 --
--- Falloff at each current's edge uses a smoothstep (not a hard cutoff), so
--- crossing into or out of a current is gradual, and overlapping currents
--- just sum -- no special-casing needed for multiple zones affecting the
--- player at once. The combined result is also smoothed over time (the same
--- exponential-approach shape SwimController already uses for turning and
--- the rest pose), so it can never pop in a single frame even if the player
--- crosses a boundary quickly.
+-- Feel: the push never jumps. Spatially, every shape fades in from its
+-- edge with a smoothstep; temporally, the applied speed ramps toward the
+-- target at the dominant current's CurrentAcceleration when growing and
+-- at its CurrentExitDeceleration when shrinking (rate-limited, so entering
+-- a fast lane is a genuine build-up and leaving one a genuine coast-down),
+-- and the applied direction turns toward the local flow direction over
+-- DirectionResponseTime, so path bends carry the player round instead of
+-- kinking. Each shape also steers slightly back toward its own center line
+-- (CurrentCentering), which is what makes a path "carry" a swimmer along
+-- it rather than letting them drift out the side.
 --
--- Each current's Attributes are cached once into a plain table when it
--- appears (and re-read on AttributeChanged, so live edits in Studio still
--- apply), and every current carries a bounding radius so the per-frame
--- loop is one cheap distance check per zone for everything the player is
--- nowhere near. Both keep the per-frame cost flat as the world gains
--- dozens of currents.
+-- Overlapping currents sum; the sum is clamped to a little above the
+-- strongest contributor's MaxSpeed (and ABSOLUTE_MAX_SPEED) so stacking
+-- can never run away. Upward push is dropped within a few studs of the
+-- surface so no current can fling the player out of the water.
+--
+-- Currents are cached into plain tables on registration (re-read on
+-- AttributeChanged so Studio edits apply live) and rejected per frame by a
+-- single bounding-sphere check, so cost stays flat as the world fills up.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -35,57 +40,142 @@ local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local player = Players.LocalPlayer
 
-local RESPONSE_TIME = 1.2 -- seconds for the applied push to catch up to the freshly computed target
+local SURFACE_GUARD = 3 -- studs below the surface where upward push is dropped
+local STACK_HEADROOM = 1.15
+-- The sideways "back to the center line" steer is capped in absolute studs/s
+-- (not just as a fraction of MaxSpeed) so even a fast lane can always be
+-- swum out of sideways at normal swim speed -- it guides, never traps.
+local MAX_CENTERING_SPEED = 6
+
+-- Blends a centering pull into the flow direction, with the cap above.
+local function steerTowardCenter(direction: Vector3, pull: Vector3, centering: number, offsetFraction: number, maxSpeed: number)
+	local k = math.min(centering * offsetFraction, MAX_CENTERING_SPEED / math.max(maxSpeed, 0.01))
+	if k <= 0.001 then
+		return direction
+	end
+	return (direction + pull * k).Unit
+end
 
 local function smoothstep(t)
 	t = math.clamp(t, 0, 1)
 	return t * t * (3 - 2 * t)
 end
 
+local function moveToward(value: number, target: number, maxDelta: number): number
+	if math.abs(target - value) <= maxDelta then
+		return target
+	end
+	return value + math.sign(target - value) * maxDelta
+end
+
 -- Current registry ----------------------------------------------------------
 
-local currents = {} -- [part] = cached data
+local currents = {} -- [instance] = cached data
 
-local function readCurrent(part: BasePart)
-	local shape = part:GetAttribute("CurrentShape")
+local function getPathPoints(container: Instance): { BasePart }
+	local points = {}
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("BasePart") and child.Name:match("^CurrentPoint") then
+			table.insert(points, child)
+		end
+	end
+	table.sort(points, function(a, b)
+		return a.Name < b.Name
+	end)
+	return points
+end
+
+local function readCurrent(instance: Instance)
+	local tier = CurrentsConfig.Tiers[instance:GetAttribute("CurrentTier")] or CurrentsConfig.Tiers.Medium
+	-- Explicit nil check: a missing CanBoost must fall back to the tier, and
+	-- `attr == true` would silently turn "not set yet" into "capped".
+	local canBoost = instance:GetAttribute("CurrentCanBoost")
+	if canBoost == nil then
+		canBoost = tier.CanBoost
+	end
 	local data = {
-		part = part,
-		shape = shape,
-		enabled = part:GetAttribute("CurrentEnabled") == true,
-		flowSpeed = part:GetAttribute("CurrentFlowSpeed") or 0,
-		canBoost = part:GetAttribute("CurrentCanBoost") == true,
-		radius = part:GetAttribute("CurrentRadius") or 0,
-		spin = part:GetAttribute("CurrentSpin") or 1,
-		spiralBias = part:GetAttribute("CurrentSpiralBias") or 0,
+		instance = instance,
+		shape = instance:GetAttribute("CurrentShape"),
+		enabled = instance:GetAttribute("CurrentEnabled") ~= false,
+		maxSpeed = instance:GetAttribute("CurrentMaxSpeed") or instance:GetAttribute("CurrentFlowSpeed") or tier.MaxSpeed,
+		acceleration = instance:GetAttribute("CurrentAcceleration") or tier.Acceleration,
+		exitDeceleration = instance:GetAttribute("CurrentExitDeceleration") or tier.ExitDeceleration,
+		centering = instance:GetAttribute("CurrentCentering") or tier.Centering,
+		canBoost = canBoost == true,
+		radius = instance:GetAttribute("CurrentRadius") or 0,
+		spin = instance:GetAttribute("CurrentSpin") or 1,
+		spiralBias = instance:GetAttribute("CurrentSpiralBias") or 0,
+		width = instance:GetAttribute("CurrentWidth") or 12,
+		center = Vector3.new(),
 		boundingRadius = 0,
+		segments = nil,
 	}
 
-	if shape == "Circular" then
-		data.boundingRadius = data.radius
+	if data.shape == "Path" then
+		local points = getPathPoints(instance)
+		local segments = {}
+		local sum = Vector3.new()
+		for i = 1, #points - 1 do
+			local a, b = points[i].Position, points[i + 1].Position
+			local length = (b - a).Magnitude
+			if length > 0.01 then
+				table.insert(segments, { a = a, b = b, dir = (b - a) / length, length = length })
+			end
+		end
+		for _, point in ipairs(points) do
+			sum += point.Position
+		end
+		if #points > 0 then
+			data.center = sum / #points
+		end
+		local farthest = 0
+		for _, point in ipairs(points) do
+			farthest = math.max(farthest, (point.Position - data.center).Magnitude)
+		end
+		data.boundingRadius = farthest + data.width
+		data.segments = segments
+		data.enabled = data.enabled and #segments > 0
+	elseif instance:IsA("BasePart") then
+		data.center = instance.Position
+		if data.shape == "Circular" then
+			data.boundingRadius = data.radius
+		else
+			data.boundingRadius = instance.Size.Magnitude / 2
+		end
 	else
-		data.boundingRadius = part.Size.Magnitude / 2
+		data.enabled = false
 	end
 
 	return data
 end
 
-local function registerCurrent(part: Instance)
-	if not part:IsA("BasePart") or not part:GetAttribute("CurrentShape") then
+local function registerCurrent(instance: Instance)
+	if not instance:GetAttribute("CurrentShape") then
 		return
 	end
-	currents[part] = readCurrent(part)
-	part.AttributeChanged:Connect(function()
-		if currents[part] then
-			currents[part] = readCurrent(part)
+	currents[instance] = readCurrent(instance)
+	instance.AttributeChanged:Connect(function()
+		if currents[instance] then
+			currents[instance] = readCurrent(instance)
 		end
 	end)
+	if instance:GetAttribute("CurrentShape") == "Path" then
+		-- Points replicate as separate children right after the model.
+		instance.ChildAdded:Connect(function()
+			if currents[instance] then
+				currents[instance] = readCurrent(instance)
+			end
+		end)
+	end
 end
 
 local function watchCurrentsFolder(folder: Instance)
 	for _, child in ipairs(folder:GetChildren()) do
 		registerCurrent(child)
 	end
-	folder.ChildAdded:Connect(registerCurrent)
+	folder.ChildAdded:Connect(function(child)
+		task.defer(registerCurrent, child)
+	end)
 	folder.ChildRemoved:Connect(function(child)
 		currents[child] = nil
 	end)
@@ -104,41 +194,38 @@ else
 end
 
 -- Influence shapes ------------------------------------------------------------
+-- Each returns (direction, falloff 0-1) or nil.
 
--- Directional: falloff from the marker's own local axes (Right/Up/Front =
--- width/height/length), so it only affects players actually within the
--- zone's box instead of an unrelated sphere around its center.
 local function directionalInfluence(data, playerPosition)
-	local part = data.part
+	local part = data.instance
 	local localPoint = part.CFrame:PointToObjectSpace(playerPosition)
 	local halfWidth = part.Size.X / 2
 	local halfHeight = part.Size.Y / 2
 	local halfLength = part.Size.Z / 2
 
-	local widthFalloff = smoothstep(1 - math.abs(localPoint.X) / halfWidth)
-	local heightFalloff = smoothstep(1 - math.abs(localPoint.Y) / halfHeight)
-	local lengthFalloff = smoothstep(1 - math.abs(localPoint.Z) / halfLength)
-
-	local falloff = widthFalloff * heightFalloff * lengthFalloff
+	local falloff = smoothstep(1 - math.abs(localPoint.X) / halfWidth)
+		* smoothstep(1 - math.abs(localPoint.Y) / halfHeight)
+		* smoothstep(1 - math.abs(localPoint.Z) / halfLength)
 	if falloff <= 0 then
 		return nil, nil
 	end
 
-	return part.CFrame.LookVector, falloff
+	local direction = part.CFrame.LookVector
+	local offsetFraction = math.clamp(math.sqrt((localPoint.X / halfWidth) ^ 2 + (localPoint.Y / halfHeight) ^ 2), 0, 1)
+	if data.centering > 0 and offsetFraction > 0.01 then
+		local pull = -(part.CFrame.RightVector * localPoint.X + part.CFrame.UpVector * localPoint.Y)
+		direction = steerTowardCenter(direction, pull.Unit, data.centering, offsetFraction, data.maxSpeed)
+	end
+	return direction, falloff
 end
 
--- Circular: a vortex. The push direction is tangent to the circle at the
--- player's own position (rotated according to the current's spin) blended
--- with a small bias toward the center, for a spiral rather than a single
--- fixed push direction -- it depends on where around the vortex the player
--- actually is.
 local function circularInfluence(data, playerPosition)
 	local radius = data.radius
 	if radius <= 0 then
 		return nil, nil
 	end
 
-	local toPlayer = playerPosition - data.part.Position
+	local toPlayer = playerPosition - data.center
 	local flat = Vector3.new(toPlayer.X, 0, toPlayer.Z)
 	local distance = flat.Magnitude
 	if distance < 0.01 or distance > radius then
@@ -156,37 +243,81 @@ local function circularInfluence(data, playerPosition)
 	if direction.Magnitude > 0.01 then
 		direction = direction.Unit
 	end
-
 	return direction, falloff
 end
 
--- Returns the summed push plus the single strongest contributing current
--- (and its falloff), which CurrentField exposes as the "dominant" one.
+-- Closest point on the polyline; tangent blends between neighbouring legs
+-- across each node (50/50 exactly at the node) so bends are rounded.
+local function pathInfluence(data, playerPosition)
+	local segments = data.segments
+	local bestIndex, bestT, bestDistance, bestPoint = nil, 0, math.huge, nil
+	for index, segment in ipairs(segments) do
+		local t = math.clamp((playerPosition - segment.a):Dot(segment.dir) / segment.length, 0, 1)
+		local point = segment.a + segment.dir * (t * segment.length)
+		local distance = (playerPosition - point).Magnitude
+		if distance < bestDistance then
+			bestIndex, bestT, bestDistance, bestPoint = index, t, distance, point
+		end
+	end
+	if not bestIndex or bestDistance >= data.width then
+		return nil, nil
+	end
+
+	local falloff = smoothstep(1 - bestDistance / data.width)
+	local tangent = segments[bestIndex].dir
+	if bestT > 0.5 and segments[bestIndex + 1] then
+		tangent = tangent:Lerp(segments[bestIndex + 1].dir, bestT - 0.5)
+	elseif bestT < 0.5 and segments[bestIndex - 1] then
+		tangent = tangent:Lerp(segments[bestIndex - 1].dir, 0.5 - bestT)
+	end
+	if tangent.Magnitude < 0.01 then
+		tangent = segments[bestIndex].dir
+	end
+
+	local direction = tangent.Unit
+	if data.centering > 0 and bestDistance > 0.01 then
+		local pull = (bestPoint - playerPosition).Unit
+		direction = steerTowardCenter(direction, pull, data.centering, bestDistance / data.width, data.maxSpeed)
+	end
+	return direction, falloff
+end
+
+-- Returns the summed push, the strongest contributing current's data and
+-- its falloff (exposed by CurrentField as the "dominant" current).
 local function computeCurrentVelocity(playerPosition)
 	local totalVelocity = Vector3.new()
 	local dominant, dominantFalloff, dominantStrength = nil, 0, 0
+	local strongestMaxSpeed = 0
 
-	for part, data in pairs(currents) do
-		if data.enabled and (playerPosition - part.Position).Magnitude <= data.boundingRadius then
+	for _, data in pairs(currents) do
+		if data.enabled and (playerPosition - data.center).Magnitude <= data.boundingRadius then
 			local direction, falloff
 			if data.shape == "Directional" then
 				direction, falloff = directionalInfluence(data, playerPosition)
 			elseif data.shape == "Circular" then
 				direction, falloff = circularInfluence(data, playerPosition)
+			elseif data.shape == "Path" then
+				direction, falloff = pathInfluence(data, playerPosition)
 			end
 
 			if direction and falloff and falloff > 0 then
-				local flowSpeed = data.flowSpeed
+				local maxSpeed = data.maxSpeed
 				if not data.canBoost then
-					flowSpeed = math.min(flowSpeed, CurrentsConfig.NO_BOOST_CAP)
+					maxSpeed = math.min(maxSpeed, CurrentsConfig.NO_BOOST_CAP)
 				end
-				local strength = flowSpeed * falloff
+				local strength = maxSpeed * falloff
 				totalVelocity += direction * strength
+				strongestMaxSpeed = math.max(strongestMaxSpeed, maxSpeed)
 				if strength > dominantStrength then
-					dominant, dominantFalloff, dominantStrength = part, falloff, strength
+					dominant, dominantFalloff, dominantStrength = data, falloff, strength
 				end
 			end
 		end
+	end
+
+	local cap = math.min(strongestMaxSpeed * STACK_HEADROOM, CurrentsConfig.ABSOLUTE_MAX_SPEED)
+	if totalVelocity.Magnitude > cap and cap > 0 then
+		totalVelocity = totalVelocity.Unit * cap
 	end
 
 	return totalVelocity, dominant, dominantFalloff
@@ -196,7 +327,9 @@ end
 
 local function onCharacterAdded(character)
 	local rootPart = character:WaitForChild("HumanoidRootPart")
-	local smoothedVelocity = Vector3.new()
+	local appliedSpeed = 0
+	local appliedDirection = Vector3.new(0, 0, -1)
+	local exitDeceleration = CurrentsConfig.DefaultExitDeceleration
 
 	local connection
 	connection = RunService.Heartbeat:Connect(function(deltaTime)
@@ -213,10 +346,29 @@ local function onCharacterAdded(character)
 			targetVelocity, dominant, dominantFalloff = computeCurrentVelocity(rootPart.Position)
 		end
 
-		local alpha = 1 - math.exp(-(1 / RESPONSE_TIME) * deltaTime)
-		smoothedVelocity = smoothedVelocity + (targetVelocity - smoothedVelocity) * alpha
-		CurrentField.SetVelocity(smoothedVelocity)
-		CurrentField.SetDominantCurrent(dominant, dominantFalloff)
+		local targetSpeed = targetVelocity.Magnitude
+		local acceleration = CurrentsConfig.DefaultExitDeceleration
+		if dominant then
+			acceleration = dominant.acceleration
+			exitDeceleration = dominant.exitDeceleration
+		end
+
+		if targetSpeed > 0.01 then
+			local alpha = 1 - math.exp(-deltaTime / CurrentsConfig.DirectionResponseTime)
+			local blended = appliedDirection + (targetVelocity / targetSpeed - appliedDirection) * alpha
+			appliedDirection = blended.Magnitude > 0.01 and blended.Unit or targetVelocity / targetSpeed
+		end
+
+		local rate = targetSpeed > appliedSpeed and acceleration or exitDeceleration
+		appliedSpeed = moveToward(appliedSpeed, targetSpeed, rate * deltaTime)
+
+		local velocity = appliedDirection * appliedSpeed
+		if velocity.Y > 0 and rootPart.Position.Y > DepthUtils.SURFACE_Y - SURFACE_GUARD then
+			velocity = Vector3.new(velocity.X, 0, velocity.Z)
+		end
+
+		CurrentField.SetVelocity(velocity)
+		CurrentField.SetDominantCurrent(dominant and dominant.instance or nil, dominantFalloff)
 	end)
 end
 
