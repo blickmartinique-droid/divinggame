@@ -155,8 +155,13 @@ return {
 			Speed = 3, -- barely swims; it drifts
 			TurnResponsiveness = 1,
 			WanderRadius = 50,
-			-- 1.360 x 2.102 x 1.888 m
-			Size = Vector3.new(4.86, 7.51, 6.74),
+			-- 1.360 x 2.143 x 1.624 m -- corrected against the real mesh
+			-- (05_Meduse_Lumineuse_Mesh in Faune_Marine_Animee.blend's own
+			-- gallery scene): the pack's verification report had this one
+			-- off by ~15% on the horizontal spread (its 1.888 vs the mesh's
+			-- actual 1.624), the only one of the 5 species where opening
+			-- the source file itself changed a number already in this file.
+			Size = Vector3.new(4.86, 7.65, 5.80),
 			Color = Color3.fromRGB(150, 190, 225),
 			Glow = Color3.fromRGB(120, 220, 255),
 			ModelYawOffsetDegrees = -90,
