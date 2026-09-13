@@ -71,44 +71,36 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   `PoissonRecif`, `TortueMarine`, `RaieManta`, `RequinRecif`,
   `MeduseLumineuse`. Corps placeholder tant que le modèle n'est pas importé —
   voir « Importer les animaux » ci-dessous.
-- **Archipel des Profondeurs (`TitanShip` + `ArchipelDesProfondeurs`)** —
-  remplace entièrement l'ancien duo MegaWreckShip/CaveRegions par UN monde
-  unifié reconstruit depuis un seul fichier `.blend` (île/montagne, un navire
-  nommé TITAN avec 7 ponts intérieurs, un réseau de grottes nommées, un
-  jardin abyssal, un récif et un quai — déjà correctement positionnés les
-  uns par rapport aux autres dans le fichier source, contrairement aux 4
-  anciennes régions dispersées). Deux scripts, un par moitié de la commande
-  ("d'abord le bateau, après les grottes") :
-  - **`TitanShip.server.lua`** — `Workspace/World/Underwater/WreckZone/
-    TitanShip` (~3753 Parts depuis `TitanShipData.lua`). Contrairement à
-    MegaWreckShip (boîtes orientées approximées par PCA sur un maillage
-    quelconque), le modèle source est entièrement fait de primitives
-    Blender (boîte/cylindre/sphère) : Shape/CFrame/Size sont exacts, rien
-    n'est approximé — seule la base de coordonnées change (Z-up → Y-up,
-    une vraie rotation, pas une réflexion) plus un décalage pour dégager la
-    plage existante. Un cas réel de "mur invisible" a été trouvé et évité
-    à la génération (deux maillages de coque partageant la même boîte
-    englobante — voir l'en-tête de `TitanShipData.lua`) ; l'enveloppe
-    visible/collidable vient de ses 466 panneaux `Superstructure` réels.
-    `Lighting` (20 `PointLight`, portés depuis l'éclairage du fichier
-    source), `Landmarks`, `LootSpots` (un par pont, taguées `SpawnRegion`)
-    et une zone de créatures (`RequinRecif`/`RaieManta`) sont en place.
-  - **`ArchipelWorld.server.lua`** — `Workspace/World/Underwater/
-    ArchipelDesProfondeurs` (~2628 Parts depuis `ArchipelWorldData.lua`).
-    Les 4 grands maillages sculptés (falaises, île, réseau de grottes,
-    cathédrale abyssale) deviennent du vrai **Terrain** (`ArchipelTerrainData
-    .lua` : leurs propres sommets réels, groupés en chaîne de sphères le
-    long de l'axe dominant du maillage — pas un blockout inventé), le
-    reste (corail, éponges, cristaux, ruines, quai) des Parts, même
-    approche que TitanShip. 19 repères nommés par le fichier source
-    (`Grottes — ...`, `Falaise — accès ...`, `Ruines — ...`...) deviennent
-    des `Landmarks`, et les grottes ancrent aussi des zones de créatures
-    (`CreatureRegions`, espèces choisies par le nom du lieu — ex. Jardin
-    des Méduses → `MeduseLumineuse` seule).
-  - Aucune des deux zones ne modifie le Terrain de plage/océan existant ni
-    les scripts de l'autre — `CurrentGenerator`/`WorldDecor` ont juste été
-    repositionnés (mêmes noms d'exemples, nouvelle position) pour suivre le
-    nouvel emplacement du navire.
+- **Épave géante (`MegaWreckShip`)** — `Workspace/World/Underwater/WreckZone/
+  MegaWreckShip`, un navire massif (~724×254×131 studs à l'échelle actuelle,
+  9 salles nommées sur plusieurs ponts, mâts, canons, escaliers, corridors
+  élargis). Reconstruit à partir de `MegaWreckShipData.lua` (table
+  auto-générée, 645 entrées : nom/catégorie/position/rotation/taille/couleur,
+  une par pièce du modèle source) par `MegaWreckShip.server.lua`. Voir le
+  commentaire en tête de ce script pour la limite technique qui a motivé
+  cette approche (boîtes orientées plutôt que le maillage réel) et comment la
+  remplacer pièce par pièce par de vrais `MeshPart` si le modèle est importé
+  plus tard dans Studio. Brèches dans la coque (`EntryPoints`), salles de
+  loot (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une
+  zone de spawn de créatures (`RequinRecif`/`RaieManta`) et des repères (`Landmarks`,
+  `InteractionPoints`) sont déjà en place. Éclairage intérieur complet sous
+  `MegaWreckShip/Lighting` (`CorridorLights`/`RoomLights`/`EntranceLights`/
+  `NavigationLights`/`AmbientLights`, ~60 `PointLight` au total, palette
+  bleu/cyan sombre avec accent chaud dans les 3 salles majeures) — voir le
+  commentaire "Interior lighting rework" dans le script pour le détail.
+- **4 régions montagnes/grottes** — `Workspace/World/Underwater/CaveRegions`,
+  reconstruites à partir de 4 modèles source (blockout, v2, v3 avec entrées, v4
+  entrées visibles) par `CaveRegionBuilder.lua` (partagé) + `CaveRegion1..4Data.lua`
+  (données auto-générées) + `CaveRegions.server.lua` (placement des 4 + courants
+  de liaison). Contrairement à `MegaWreckShip` (boîtes), ce sont ici de vrais
+  volumes de **Terrain** (Rock plein, Water creusé pour les grottes/tunnels) —
+  voir le commentaire en tête de `CaveRegionBuilder.lua` pour pourquoi (modèles
+  volontairement "blockout", le Terrain lissé de Roblox rend un résultat organique
+  là où des Parts auraient gardé un look cubique). Chaque région a ses vraies
+  entrées (jamais de trou visuel sans tunnel derrière — chaque brèche est
+  activement creusée jusqu'à la caverne centrale), ses ruines/terrasses/coraux
+  (Parts), ses `LootSpots`/zone de créatures (`SpawnRegion`, comme pour l'épave)
+  et ne touche jamais à `MegaWreckShip`.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
@@ -210,17 +202,6 @@ orientation des modèles importés vs placeholder, résolution des anciens noms
 d'espèces, et chargement/bascule des clips de nage. Le fake est volontairement
 strict — un `Enum` inexistant y lève une erreur comme dans Studio, ce qu'une
 analyse statique ne voit pas.
-
-```sh
-python3 tests/build_archipel_test.py && luau tests/archipel_test.lua
-```
-
-79 vérifications sur `TitanShip.server.lua`/`ArchipelWorld.server.lua` :
-exécute réellement les deux scripts (pas juste leurs données), et c'est ce
-test qui a trouvé — avant que ça atteigne le jeu — deux maillages de la
-coque du Titan partageant exactement la même boîte englobante, qui se
-seraient reconstruits en un seul pavé solide bouchant une vraie entrée
-(même famille de bug que le mur invisible de l'ancienne épave).
 
 Analyse statique en complément : `luau-analyze $(find src -name "*.lua")`.
 
