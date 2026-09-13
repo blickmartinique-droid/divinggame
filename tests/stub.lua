@@ -30,8 +30,6 @@ V3.__index = function(t, k)
 		return function(a, b) return v3(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X) end
 	end
 	if k == "Dot" then return function(a, b) return a.X * b.X + a.Y * b.Y + a.Z * b.Z end end
-	if k == "Min" then return function(a, b) return v3(math.min(a.X, b.X), math.min(a.Y, b.Y), math.min(a.Z, b.Z)) end end
-	if k == "Max" then return function(a, b) return v3(math.max(a.X, b.X), math.max(a.Y, b.Y), math.max(a.Z, b.Z)) end end
 	return rawget(V3, k)
 end
 Vector3 = { new = v3, zero = v3(0, 0, 0), one = v3(1, 1, 1) }
@@ -163,15 +161,6 @@ Inst.__index = function(t, k)
 	if k == "Parent" then return rawget(t, "_parent") end
 	local v = rawget(Inst, k)
 	if v then return v end
-	-- Real Roblox instances resolve dot-indexing (workspace.SomeChild) to
-	-- FindFirstChild -- match that here so scripts under test can use
-	-- either style, same as in Studio.
-	local children = rawget(t, "_children")
-	if children then
-		for _, c in ipairs(children) do
-			if c.Name == k then return c end
-		end
-	end
 	return nil
 end
 Inst.__newindex = function(t, k, v)
@@ -298,19 +287,6 @@ local function service(class, name)
 end
 
 Workspace = service("Workspace", "Workspace")
-TERRAIN_FILLS = {}
-local terrainInst = newInstance("Terrain")
-terrainInst.Name = "Terrain"
-terrainInst.Parent = Workspace
-function terrainInst:FillBall(center, radius, material)
-	table.insert(TERRAIN_FILLS, { op = "FillBall", center = center, radius = radius, material = material })
-end
-function terrainInst:FillCylinder(cf, height, radius, material)
-	table.insert(TERRAIN_FILLS, { op = "FillCylinder", cframe = cf, height = height, radius = radius, material = material })
-end
-function terrainInst:FillBlock(cf, size, material)
-	table.insert(TERRAIN_FILLS, { op = "FillBlock", cframe = cf, size = size, material = material })
-end
 ReplicatedStorage = service("ReplicatedStorage", "ReplicatedStorage")
 ServerScriptService = service("ServerScriptService", "ServerScriptService")
 local PlayersService = service("Players", "Players")

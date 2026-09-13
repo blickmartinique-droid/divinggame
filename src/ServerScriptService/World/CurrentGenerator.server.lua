@@ -537,17 +537,13 @@ exampleDirectional({
 	Tier = "Strong",
 })
 
--- A vortex sitting where a wreck or cave mouth would naturally go --
--- demonstrates the circular/spiral shape and a strong pull. Repositioned
--- next to TitanShip.server.lua's ship (~(280,-182,340), replacing the old
--- MegaWreckShip at (150,-300,-150)) -- radius shrunk to match: the TITAN's
--- own footprint (~310x67x55 studs) is smaller than the old pirate wreck's
--- (~724x254x131).
+-- A vortex sitting where a wreck or cave mouth would naturally go (Épave
+-- range) -- demonstrates the circular/spiral shape and a strong pull.
 exampleCircular({
 	Name = "EpaveVortex",
-	DisplayName = "Tourbillon du Titan",
-	Position = Vector3.new(280, -182, 280),
-	Radius = 40,
+	DisplayName = "Tourbillon de l'épave",
+	Position = Vector3.new(150, -300, -150),
+	Radius = 70,
 	Spin = 1,
 	Tier = "Strong",
 })
@@ -563,18 +559,17 @@ exampleCircular({
 	Tier = "Medium",
 })
 
--- A vertical lift from the Titan's range back up toward the surface: a
--- straight-up path, the quick way home after a deep dive. Repositioned
--- next to the ship's new location (see EpaveVortex above).
+-- A vertical lift from the Épave range back up toward the Grottes: a
+-- straight-up path, the quick way home after a deep dive.
 examplePath({
 	Name = "EpaveUpdraft",
-	DisplayName = "Remontée du Titan",
+	DisplayName = "Remontée de l'épave",
 	Tier = "Strong",
 	Width = 10,
 	Points = {
-		Vector3.new(280, -260, 280),
-		Vector3.new(282, -180, 282),
-		Vector3.new(290, -100, 290),
+		Vector3.new(260, -330, -260),
+		Vector3.new(262, -250, -262),
+		Vector3.new(270, -170, -270),
 	},
 })
 
