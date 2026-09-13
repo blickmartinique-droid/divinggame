@@ -208,15 +208,54 @@ check("terrain: one FillCylinder per carve chain gap", carveCylinders == expecte
 check("terrain: every node is a real sphere too (no gaps between capsule segments)", massBalls >= expectedCylinders.mass and carveBalls >= expectedCylinders.carve)
 
 -- Order check: every mass fill's list index precedes every carve fill's.
+-- The pre-pass clear-to-Water FillBlock calls are excluded here (op ~=
+-- FillBall/FillCylinder) -- they run before everything on purpose and
+-- are not a "carve".
 local lastMassIndex, firstCarveIndex = 0, math.huge
 for i, fill in ipairs(TERRAIN_FILLS) do
-	if fill.material.Name == "Rock" or fill.material.Name == "Ground" then
-		lastMassIndex = math.max(lastMassIndex, i)
-	elseif fill.material.Name == "Water" then
-		firstCarveIndex = math.min(firstCarveIndex, i)
+	if fill.op == "FillBall" or fill.op == "FillCylinder" then
+		if fill.material.Name == "Rock" or fill.material.Name == "Ground" then
+			lastMassIndex = math.max(lastMassIndex, i)
+		elseif fill.material.Name == "Water" then
+			firstCarveIndex = math.min(firstCarveIndex, i)
+		end
 	end
 end
 check("terrain: mass fills all happen before carve fills", lastMassIndex < firstCarveIndex, lastMassIndex .. " vs " .. firstCarveIndex)
+
+-- 5. Re-run idempotency -- the actual bug reported in Studio -----------------
+-- Terrain is real persistent voxel data (FillBall/FillCylinder only ADD
+-- material, a re-run never removes what an earlier run left behind), so
+-- running this script twice in a row (as happens whenever the game is
+-- restarted in the same Studio place, e.g. to pick up this very fix) must
+-- clear its own footprint first or the old shape stays baked in forever
+-- underneath the new one -- exactly what the user saw.
+section("Terrain re-run idempotency")
+local fillsAfterFirstRun = #TERRAIN_FILLS
+local clearFillsFirstRun = 0
+for _, fill in ipairs(TERRAIN_FILLS) do
+	if fill.op == "FillBlock" and fill.material.Name == "Water" then
+		clearFillsFirstRun += 1
+	end
+end
+check("first run clears its footprint before filling (at least one Water FillBlock)", clearFillsFirstRun > 0, clearFillsFirstRun)
+
+-- The very first Terrain call of the run must be a clear, not a mass/carve
+-- fill -- otherwise old geometry from a previous run is filled over before
+-- ever being erased.
+check("the clear pass runs before any mass/carve fill", TERRAIN_FILLS[1] ~= nil and TERRAIN_FILLS[1].op == "FillBlock", TERRAIN_FILLS[1] and TERRAIN_FILLS[1].op)
+
+RUN_ARCHIPEL() -- second run, same session -- simulates restarting the game
+local fillsAfterSecondRun = #TERRAIN_FILLS - fillsAfterFirstRun
+local secondRunHasClear = false
+for i = fillsAfterFirstRun + 1, #TERRAIN_FILLS do
+	if TERRAIN_FILLS[i].op == "FillBlock" and TERRAIN_FILLS[i].material.Name == "Water" then
+		secondRunHasClear = true
+		break
+	end
+end
+check("second run also clears before filling (old shape can't survive a restart)", secondRunHasClear)
+check("second run repeats the same terrain work (not skipped, not doubled)", fillsAfterSecondRun == fillsAfterFirstRun, fillsAfterSecondRun .. " vs " .. fillsAfterFirstRun)
 
 -- Regression guard for the actual bug reported in Studio: no node's
 -- radius should be wildly larger than the mesh's own real half-extent --
