@@ -71,36 +71,46 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   `PoissonRecif`, `TortueMarine`, `RaieManta`, `RequinRecif`,
   `MeduseLumineuse`. Corps placeholder tant que le modèle n'est pas importé —
   voir « Importer les animaux » ci-dessous.
-- **Épave géante (`MegaWreckShip`)** — `Workspace/World/Underwater/WreckZone/
-  MegaWreckShip`, un navire massif (~724×254×131 studs à l'échelle actuelle,
-  9 salles nommées sur plusieurs ponts, mâts, canons, escaliers, corridors
-  élargis). Reconstruit à partir de `MegaWreckShipData.lua` (table
-  auto-générée, 645 entrées : nom/catégorie/position/rotation/taille/couleur,
-  une par pièce du modèle source) par `MegaWreckShip.server.lua`. Voir le
-  commentaire en tête de ce script pour la limite technique qui a motivé
-  cette approche (boîtes orientées plutôt que le maillage réel) et comment la
-  remplacer pièce par pièce par de vrais `MeshPart` si le modèle est importé
-  plus tard dans Studio. Brèches dans la coque (`EntryPoints`), salles de
-  loot (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une
-  zone de spawn de créatures (`RequinRecif`/`RaieManta`) et des repères (`Landmarks`,
-  `InteractionPoints`) sont déjà en place. Éclairage intérieur complet sous
-  `MegaWreckShip/Lighting` (`CorridorLights`/`RoomLights`/`EntranceLights`/
-  `NavigationLights`/`AmbientLights`, ~60 `PointLight` au total, palette
-  bleu/cyan sombre avec accent chaud dans les 3 salles majeures) — voir le
-  commentaire "Interior lighting rework" dans le script pour le détail.
-- **4 régions montagnes/grottes** — `Workspace/World/Underwater/CaveRegions`,
-  reconstruites à partir de 4 modèles source (blockout, v2, v3 avec entrées, v4
-  entrées visibles) par `CaveRegionBuilder.lua` (partagé) + `CaveRegion1..4Data.lua`
-  (données auto-générées) + `CaveRegions.server.lua` (placement des 4 + courants
-  de liaison). Contrairement à `MegaWreckShip` (boîtes), ce sont ici de vrais
-  volumes de **Terrain** (Rock plein, Water creusé pour les grottes/tunnels) —
-  voir le commentaire en tête de `CaveRegionBuilder.lua` pour pourquoi (modèles
-  volontairement "blockout", le Terrain lissé de Roblox rend un résultat organique
-  là où des Parts auraient gardé un look cubique). Chaque région a ses vraies
-  entrées (jamais de trou visuel sans tunnel derrière — chaque brèche est
-  activement creusée jusqu'à la caverne centrale), ses ruines/terrasses/coraux
-  (Parts), ses `LootSpots`/zone de créatures (`SpawnRegion`, comme pour l'épave)
-  et ne touche jamais à `MegaWreckShip`.
+- **Archipel des Profondeurs (`TitanShip` + `ArchipelDesProfondeurs`)** —
+  remplace entièrement l'ancien duo procédural MegaWreckShip/CaveRegionBuilder
+  par le vrai monde livré dans le pack "Archipel des Profondeurs V2" : l'île
+  d'accueil, le massif montagneux, le navire TITAN (328 m, 7 ponts, 103 salles
+  à portes réelles, 17 escaliers), le réseau de 12 cavernes creusées dans la
+  falaise (booléen réel, pas un tube posé dans l'océan), le jardin abyssal, le
+  récif et le quai — **~38 600 vrais Parts/WedgeParts**, déjà vérifiés
+  (6698 assertions géométriques) par les sources du pack, pas reconstruits ici.
+  - **Comment c'est livré** : `assets/ArchipelDesProfondeurs/*.rbxmx`, un
+    fichier par module (`00_SURFACE_ACCUEIL`..`06_QUAI_ET_CAMP`), exportés
+    directement depuis le `.blend` source par la propre chaîne du pack
+    (`Sources/export_archipel.py` — booléen de massif, hull réel triangulé en
+    WedgeParts, portes/salles/escaliers exacts), pas par un script Lua qui
+    redérive la géométrie. `default.project.json` les synchronise en statique
+    via des noeuds `$path` sous `Workspace/World/Underwater` (nouveau —
+    jusqu'ici Workspace était entièrement construit au runtime).
+  - **Échelle adaptée au jeu** : le pack exporte par défaut à l'échelle
+    "réaliste" Roblox (1 stud = 0,28 m, donc 500 m de profondeur → 1786 studs).
+    Ce jeu utilise "1 stud = 1 mètre" partout (`ZonesConfig.MaxDepth = 500`,
+    oxygène, courants), donc la constante `SCALE` d'`export_archipel.py` a été
+    changée à `1` avant de lancer l'export — la seule modification faite au
+    pack, tout le reste (topologie, portes, 6698 vérifications) est intact.
+  - **`ArchipelPlacement.server.lua`** — ne fait AUCUN travail de géométrie :
+    décale le TITAN et le reste du monde d'un seul bloc rigide (`Model
+    :PivotTo`) pour dégager la plage existante à l'origine, puis ajoute les
+    accroches gameplay de ce projet (`SpawnRegion` de loot par pont du navire,
+    de créatures par caverne — 12 cavernes nommées avec leur vrai rayon/
+    hauteur —, `Landmarks` sur les 21 repères de navigation du pack) à partir
+    d'`ArchipelManifestData.lua`, lui-même généré depuis le vrai
+    `Plans/manifest.json` du pack (salles/portes/escaliers/graphe de grottes/
+    repères, converti avec le même repère d'axes et la même échelle que
+    l'export). Chaque cavité, salle et repère nommé (Cathédrale Abyssale,
+    Jardin des Méduses…) est donc positionné avec ses vraies coordonnées.
+  - **Pourquoi pas un script de reconstruction comme avant** : les deux
+    tentatives précédentes de reconstruire cette géométrie à la main
+    (l'ancien `MegaWreckShip` en boîtes PCA, puis un `TitanShip`/`ArchipelWorld`
+    entièrement redérivés du `.blend`) ont chacune introduit leurs propres
+    bugs en re-dérivant la géométrie (mur invisible, sphère de Terrain géante
+    avalant le décor). Utiliser directement l'export déjà vérifié du pack
+    élimine cette classe de bugs entière.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
@@ -202,6 +212,19 @@ orientation des modèles importés vs placeholder, résolution des anciens noms
 d'espèces, et chargement/bascule des clips de nage. Le fake est volontairement
 strict — un `Enum` inexistant y lève une erreur comme dans Studio, ce qu'une
 analyse statique ne voit pas.
+
+```sh
+python3 tests/build_placement_test.py && luau tests/placement_test.lua
+```
+
+106 vérifications sur `ArchipelPlacement.server.lua` (contre une fausse scène
+Rojo minimale — la vraie géométrie statique de `assets/ArchipelDesProfondeurs
+/*.rbxmx` n'est pas testable ici, seule la logique de ce script l'est) :
+renommage défensif si Rojo resynchronise sous le nom du fichier plutôt que la
+clé de l'arbre, décalage rigide correct (`PivotTo`), les 21 repères / 12
+zones de grottes / 7 zones de loot du navire créés avec les bonnes données,
+et un second run (simulant un redémarrage) qui ne plante pas et ne duplique
+pas la géométrie statique.
 
 Analyse statique en complément : `luau-analyze $(find src -name "*.lua")`.
 

@@ -57,6 +57,8 @@ CF.__mul = function(a, b)
 	end
 	return cf(a.p + mulVec(a.r, b.p), mulMat(a.r, b.r))
 end
+CF.__add = function(a, b) return cf(a.p + b, a.r) end
+CF.__sub = function(a, b) return cf(a.p - b, a.r) end
 CF.__index = function(t, k)
 	if k == "Position" or k == "p" then return rawget(t, "p") end
 	if k == "LookVector" then return -col(t.r, 3) end
@@ -161,6 +163,15 @@ Inst.__index = function(t, k)
 	if k == "Parent" then return rawget(t, "_parent") end
 	local v = rawget(Inst, k)
 	if v then return v end
+	-- Real Roblox instances resolve dot-indexing (workspace.SomeChild) to
+	-- FindFirstChild -- match that here so scripts under test can use
+	-- either style, same as in Studio.
+	local children = rawget(t, "_children")
+	if children then
+		for _, c in ipairs(children) do
+			if c.Name == k then return c end
+		end
+	end
 	return nil
 end
 Inst.__newindex = function(t, k, v)
@@ -246,17 +257,39 @@ function Inst:Clone()
 	end
 	return copy
 end
+-- Real Model:GetPivot()/:PivotTo() key off the PrimaryPart's own CFrame (or
+-- a computed center with no PrimaryPart) -- there is no real "Model.Position"
+-- property to track separately, so this stub doesn't invent one.
+function Inst:GetPivot()
+	local primary = rawget(self, "PrimaryPart")
+	if primary then
+		return primary.CFrame
+	end
+	return CFrame.new(self.Position) -- no PrimaryPart: approximate, real Roblox computes a bounding-box center
+end
 function Inst:PivotTo(target)
-	local origin = rawget(self, "PrimaryPart") and self.PrimaryPart.Position or self.Position
+	local origin = self:GetPivot().Position
+	local delta = target.Position - origin
 	for _, d in ipairs(self:GetDescendants()) do
 		if d:IsA("BasePart") then
-			d.Position = d.Position + (target.Position - origin)
+			d.Position = d.Position + delta
 			d.CFrame = CFrame.new(d.Position)
 		end
 	end
-	self.Position = target.Position
 end
-function Inst:GetPivot() return CFrame.new(self.Position) end
+function Inst:GetExtentsSize()
+	local minV, maxV = nil, nil
+	for _, d in ipairs(self:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local half = d.Size / 2
+			local lo, hi = d.Position - half, d.Position + half
+			minV = minV and minV:Min(lo) or lo
+			maxV = maxV and maxV:Max(hi) or hi
+		end
+	end
+	if not minV then return Vector3.new(0, 0, 0) end
+	return maxV - minV
+end
 function Inst:SetNetworkOwner() end
 function Inst:ApplyImpulse() end
 function Inst:LoadAnimation(animation)
