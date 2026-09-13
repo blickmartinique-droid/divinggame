@@ -27,7 +27,11 @@
 -- same reasoning as the old CaveRegionBuilder (organic shapes read as
 -- organic in Terrain, not as stacked boxes) -- while everything else
 -- (structural/decorative primitives: coral, sponges, crystals, ruins,
--- dock planks...) becomes Parts, exactly like TitanShip.server.lua.
+-- dock planks...) becomes Parts, exactly like TitanShip.server.lua. Each
+-- mesh's medial-axis chain (ArchipelTerrainData.lua) is filled as tapered
+-- capsules between consecutive nodes (see fillCapsule below), not isolated
+-- balls -- an earlier version left them isolated and, confirmed in Studio,
+-- that read as one giant smooth boulder rather than a ridge or tunnel.
 
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
@@ -109,10 +113,37 @@ for _, data in pairs(TerrainData) do
 	end
 end
 
+-- Connects two chain nodes with a tapered cylinder (radius = their average)
+-- so the terrain reads as one continuous ridge/tunnel instead of a string
+-- of separate balls -- confirmed in Studio: isolated FillBalls alone
+-- looked like a giant smooth boulder chain, not a rock formation.
+-- Terrain:FillCylinder's height runs along the CFrame's own Y axis, so
+-- the cylinder is oriented with Y pointing from A to B; the arbitrary
+-- reference vector only has to be non-parallel to that direction, picked
+-- per-segment since a spine can run in any direction.
+local function fillCapsule(pointA: Vector3, radiusA: number, pointB: Vector3, radiusB: number, material: Enum.Material)
+	terrain:FillBall(pointA, radiusA, material)
+	local diff = pointB - pointA
+	local height = diff.Magnitude
+	if height > 0.5 then
+		local up = diff.Unit
+		local reference = math.abs(up.Y) < 0.9 and Vector3.new(0, 1, 0) or Vector3.new(1, 0, 0)
+		local right = up:Cross(reference).Unit
+		local cf = CFrame.fromMatrix((pointA + pointB) / 2, right, up)
+		terrain:FillCylinder(cf, height, (radiusA + radiusB) / 2, material)
+	end
+	terrain:FillBall(pointB, radiusB, material)
+end
+
 local function fillChain(data)
 	local material = Enum.Material[data.Material]
-	for _, segment in ipairs(data.Chain) do
-		terrain:FillBall(segment.Center, segment.Radius, material)
+	local chain = data.Chain
+	if #chain == 1 then
+		terrain:FillBall(chain[1].Center, chain[1].Radius, material)
+		return
+	end
+	for i = 1, #chain - 1 do
+		fillCapsule(chain[i].Center, chain[i].Radius, chain[i + 1].Center, chain[i + 1].Radius, material)
 	end
 end
 

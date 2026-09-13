@@ -179,32 +179,34 @@ if archipel then
 end
 
 -- 3. Terrain fills ---------------------------------------------------------
+-- Nodes are now connected as capsules (FillBall + FillCylinder between
+-- consecutive nodes), not isolated balls -- see ArchipelWorld.server.lua's
+-- fillCapsule for why (an isolated-ball chain read as one giant smooth
+-- boulder in Studio). So a chain of N nodes produces N-1 FillCylinder
+-- calls and up to 2*(N-1) FillBall calls (interior nodes appear as both
+-- the "B" end of one pair and the "A" end of the next) -- checked as
+-- lower bounds, not exact counts, since that overlap is deliberate.
 section("Terrain")
-local massFills, carveFills = 0, 0
+local massBalls, carveBalls, massCylinders, carveCylinders = 0, 0, 0, 0
 for _, fill in ipairs(TERRAIN_FILLS) do
+	local isMass = fill.material.Name == "Rock" or fill.material.Name == "Ground"
+	local isCarve = fill.material.Name == "Water"
 	if fill.op == "FillBall" then
-		if fill.material.Name == "Rock" or fill.material.Name == "Ground" then
-			massFills += 1
-		elseif fill.material.Name == "Water" then
-			carveFills += 1
-		end
+		if isMass then massBalls += 1 elseif isCarve then carveBalls += 1 end
+	elseif fill.op == "FillCylinder" then
+		if isMass then massCylinders += 1 elseif isCarve then carveCylinders += 1 end
 	end
 end
-check("terrain: mass filled before any carve (Rock/Ground fills precede Water fills)", massFills > 0 and carveFills > 0)
-check("terrain: mass fill count matches ArchipelTerrainData", massFills == (function()
-	local n = 0
-	for _, d in pairs(ArchipelTerrainData) do
-		if d.Role == "mass" then n += #d.Chain end
-	end
-	return n
-end)())
-check("terrain: carve fill count matches ArchipelTerrainData", carveFills == (function()
-	local n = 0
-	for _, d in pairs(ArchipelTerrainData) do
-		if d.Role == "carve" then n += #d.Chain end
-	end
-	return n
-end)())
+check("terrain: mass and carve fills both happened", massBalls > 0 and carveBalls > 0)
+
+local expectedCylinders = { mass = 0, carve = 0 }
+for _, d in pairs(ArchipelTerrainData) do
+	expectedCylinders[d.Role] += math.max(0, #d.Chain - 1)
+end
+check("terrain: one FillCylinder per mass chain gap", massCylinders == expectedCylinders.mass, massCylinders .. " vs " .. expectedCylinders.mass)
+check("terrain: one FillCylinder per carve chain gap", carveCylinders == expectedCylinders.carve, carveCylinders .. " vs " .. expectedCylinders.carve)
+check("terrain: every node is a real sphere too (no gaps between capsule segments)", massBalls >= expectedCylinders.mass and carveBalls >= expectedCylinders.carve)
+
 -- Order check: every mass fill's list index precedes every carve fill's.
 local lastMassIndex, firstCarveIndex = 0, math.huge
 for i, fill in ipairs(TERRAIN_FILLS) do
@@ -215,6 +217,20 @@ for i, fill in ipairs(TERRAIN_FILLS) do
 	end
 end
 check("terrain: mass fills all happen before carve fills", lastMassIndex < firstCarveIndex, lastMassIndex .. " vs " .. firstCarveIndex)
+
+-- Regression guard for the actual bug reported in Studio: no node's
+-- radius should be wildly larger than the mesh's own real half-extent --
+-- a value in the hundreds was the "giant boulder swallowing everything
+-- nearby" symptom. Falaises_Massif_Sous_Marin's real dims are ~847x590x443
+-- studs, so its true perpendicular half-extent tops out around 300ish
+-- (a diagonal of half-width and half-height); comfortable margin at 350.
+local maxRadiusSeen = 0
+for _, d in pairs(ArchipelTerrainData) do
+	for _, seg in ipairs(d.Chain) do
+		maxRadiusSeen = math.max(maxRadiusSeen, seg.Radius)
+	end
+end
+check("terrain: no node radius is implausibly larger than the source mesh", maxRadiusSeen < 350, maxRadiusSeen)
 
 -- 4. Cross-check: TitanShip and ArchipelWorld don't collide in world space
 section("Placement sanity")
