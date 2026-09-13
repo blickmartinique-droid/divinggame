@@ -5,10 +5,22 @@
 -- across its own depth band in the open-ocean ring, which is what the
 -- current prototype map uses.
 --
--- Models: ReplicatedStorage.Assets.Creatures.<SpeciesId> (a Model with a
--- PrimaryPart) is cloned when present -- that is where Blender assets go.
--- Otherwise a flat placeholder body is built from the species' Size/Color.
--- Either way the spawner adds the movement constraints the brain drives.
+-- Models: ReplicatedStorage.Assets.Creatures.<ModelName> (then .<Id>) is
+-- cloned when present -- that is where the imported animal assets go, and
+-- ModelName is the exact name the pack's FBX imports under, e.g.
+-- "02_Requin_Recif". Otherwise a flat placeholder body is built from the
+-- species' Size/Color. Either way the spawner adds the movement
+-- constraints the brain drives.
+--
+-- Animation: these animals are NOT humanoids, so an imported rig gets an
+-- AnimationController + Animator (never a Humanoid), and the brain's own
+-- state picks the clip -- the slow swim while wandering, the fast one
+-- while fleeing or chasing. Both clip ids live in CreaturesConfig and are
+-- nil until the clips are published under this game's owner; with them
+-- nil setupAnimator simply does nothing and the creature swims with a
+-- still body, so nothing here breaks while they are missing. The clips
+-- animate the body in place -- forward motion is this system's job, not
+-- the animation's.
 --
 -- Bodies are unanchored, server-owned physics parts moved by AlignPosition/
 -- AlignOrientation (not anchored + CFrame writes), so clients get smooth,
@@ -54,14 +66,29 @@ for _, species in ipairs(CreaturesConfig.Species) do
 	speciesById[species.Id] = species
 end
 
+-- A SpawnRegion may still name a species by an id used before the real
+-- assets arrived (see CreaturesConfig.Aliases) -- resolve those rather
+-- than silently spawning nothing in a region somebody tagged in Studio.
+local function resolveSpecies(id: string)
+	return speciesById[id] or speciesById[CreaturesConfig.Aliases[id] or ""]
+end
+
 -- Model construction ----------------------------------------------------------
 
-local function findAssetModel(speciesId: string): Model?
+-- Tries the pack's own model name first (what the FBX imports as), then
+-- the species id, so the asset works whether or not it was renamed after
+-- importing.
+local function findAssetModel(species): Model?
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	local creatures = assets and assets:FindFirstChild("Creatures")
-	local model = creatures and creatures:FindFirstChild(speciesId)
-	if model and model:IsA("Model") and model.PrimaryPart then
-		return model
+	if not creatures then
+		return nil
+	end
+	for _, name in ipairs({ species.ModelName, species.Id }) do
+		local model = name and creatures:FindFirstChild(name)
+		if model and model:IsA("Model") and model.PrimaryPart then
+			return model
+		end
 	end
 	return nil
 end
@@ -101,7 +128,7 @@ local function buildPlaceholder(species): Model
 	return model
 end
 
-local function prepareModel(model: Model, species)
+local function prepareModel(model: Model, species, imported: boolean)
 	for _, descendant in ipairs(model:GetDescendants()) do
 		if descendant:IsA("BasePart") then
 			descendant.Anchored = false
@@ -137,9 +164,77 @@ local function prepareModel(model: Model, species)
 
 	model.Name = species.Id
 	model:SetAttribute("Species", species.Id)
+	-- Read by CreatureBrain: only an imported rig needs the species'
+	-- ModelYawOffsetDegrees, the placeholder body is built facing -Z.
+	model:SetAttribute("ImportedRig", imported)
 	model:SetAttribute("DisplayName", species.Name)
 	model:SetAttribute("Behavior", species.Behavior)
 	CollectionService:AddTag(model, "Creature")
+end
+
+-- Loads the two swim clips onto a non-humanoid rig. Returns nil when the
+-- species has no published clip ids yet (the normal state until they are
+-- uploaded) or when the model has no rig to animate -- a placeholder body
+-- is rigid geometry, so there is nothing for an Animator to deform.
+local function setupAnimator(model: Model, species, imported: boolean)
+	if not imported or not (species.SlowSwimAnimationId or species.FastSwimAnimationId) then
+		return nil
+	end
+
+	local controller = Instance.new("AnimationController")
+	controller.Name = "CreatureAnimationController"
+	controller.Parent = model
+
+	local animator = Instance.new("Animator")
+	animator.Parent = controller
+
+	local function loadTrack(assetId: string?)
+		if not assetId then
+			return nil
+		end
+		local animation = Instance.new("Animation")
+		animation.AnimationId = assetId
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(animation)
+		end)
+		if not ok or not track then
+			-- A wrong/unpublished id must not take the whole spawner down
+			-- with it: the creature just swims without body animation.
+			warn(string.format("[Creatures] %s: could not load animation %s", species.Id, assetId))
+			return nil
+		end
+		track.Looped = true
+		track.Priority = Enum.AnimationPriority.Movement
+		return track
+	end
+
+	local tracks = { slow = loadTrack(species.SlowSwimAnimationId), fast = loadTrack(species.FastSwimAnimationId) }
+	if not (tracks.slow or tracks.fast) then
+		controller:Destroy()
+		return nil
+	end
+	return tracks
+end
+
+-- The brain's own state drives which clip plays: calm wandering uses the
+-- slow swim, fleeing or chasing uses the fast one. Falls back to whichever
+-- clip exists if only one has been published.
+local function applyAnimationState(entry, state: string)
+	local tracks = entry.tracks
+	if not tracks or entry.animationState == state then
+		return
+	end
+	entry.animationState = state
+
+	local wanted = (state == "Wander") and (tracks.slow or tracks.fast) or (tracks.fast or tracks.slow)
+	for _, track in pairs(tracks) do
+		if track ~= wanted and track.IsPlaying then
+			track:Stop(0.3)
+		end
+	end
+	if wanted and not wanted.IsPlaying then
+		wanted:Play(0.3)
+	end
 end
 
 -- Spawning ----------------------------------------------------------------------
@@ -157,15 +252,16 @@ local function onAttack(brain, playerRoot: BasePart)
 end
 
 local function spawnCreature(species, position: Vector3)
-	local asset = findAssetModel(species.Id)
+	local asset = findAssetModel(species)
 	local model = asset and asset:Clone() or buildPlaceholder(species)
-	prepareModel(model, species)
+	prepareModel(model, species, asset ~= nil)
 	model:PivotTo(CFrame.new(position))
 	model.Parent = creaturesFolder
 	model.PrimaryPart:SetNetworkOwner(nil)
 
 	local brain = CreatureBrain.new(model, species, position, onAttack)
-	local entry = { brain = brain, model = model, nextTick = 0 }
+	local entry = { brain = brain, model = model, nextTick = 0, tracks = setupAnimator(model, species, asset ~= nil) }
+	applyAnimationState(entry, brain.state)
 	table.insert(brains, entry)
 
 	model.AncestryChanged:Connect(function(_, parent)
@@ -201,8 +297,11 @@ local function populateRegion(region: BasePart)
 
 	local candidates = {}
 	for _, id in ipairs(SpawnRegions.GetSpeciesList(region)) do
-		if speciesById[id] then
-			table.insert(candidates, speciesById[id])
+		local species = resolveSpecies(id)
+		if species then
+			table.insert(candidates, species)
+		else
+			warn(string.format("[Creatures] SpawnRegion %s: unknown species %q", region:GetFullName(), id))
 		end
 	end
 	if #candidates == 0 then
@@ -279,6 +378,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 			local dt = math.min(now - (entry.lastTick or now), FAR_INTERVAL * 2)
 			entry.lastTick = now
 			brain:Update(dt > 0 and dt or accumulated, playerRoot, distance)
+			applyAnimationState(entry, brain.state)
 			entry.nextTick = distance > FAR_DISTANCE and now + FAR_INTERVAL or 0
 		end
 	end

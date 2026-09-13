@@ -547,7 +547,7 @@ do
 	CollectionService:AddTag(exteriorRegion, "SpawnRegion")
 	exteriorRegion:SetAttribute("RegionKind", "Creature")
 	exteriorRegion:SetAttribute("RegionCount", 5)
-	exteriorRegion:SetAttribute("RegionSpecies", "Requin,Raie")
+	exteriorRegion:SetAttribute("RegionSpecies", "RequinRecif,RaieManta")
 	exteriorRegion:SetAttribute("RegionEnabled", true)
 end
 

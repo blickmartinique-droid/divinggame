@@ -50,7 +50,7 @@ local REGIONS = {
 			Yaw = math.rad(17),
 			TreasureCount = 6,
 			CreatureCount = 4,
-			CreatureSpecies = "Sardine,Tortue,Raie",
+			CreatureSpecies = "PoissonRecif,TortueMarine,RaieManta",
 		},
 	},
 	{
@@ -63,7 +63,7 @@ local REGIONS = {
 			Yaw = math.rad(-29),
 			TreasureCount = 8,
 			CreatureCount = 5,
-			CreatureSpecies = "Raie,Requin",
+			CreatureSpecies = "RaieManta,RequinRecif",
 		},
 	},
 	{
@@ -76,7 +76,7 @@ local REGIONS = {
 			Yaw = math.rad(63),
 			TreasureCount = 8,
 			CreatureCount = 5,
-			CreatureSpecies = "Requin,Raie",
+			CreatureSpecies = "RequinRecif,RaieManta",
 		},
 	},
 	{
@@ -89,7 +89,7 @@ local REGIONS = {
 			Yaw = math.rad(-80),
 			TreasureCount = 10,
 			CreatureCount = 5,
-			CreatureSpecies = "Requin,Baudroie",
+			CreatureSpecies = "RequinRecif,MeduseLumineuse",
 		},
 	},
 }

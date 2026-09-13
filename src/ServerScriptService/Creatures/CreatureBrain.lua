@@ -31,6 +31,24 @@ local function randomUnitVector(): Vector3
 	return v.Unit
 end
 
+-- The delivered animal models face -X in their own space, while Roblox
+-- steers by -Z (CFrame.lookAt's LookVector), so orienting them straight
+-- at the heading would have every animal swimming sideways. Rotating the
+-- model -90 degrees about Y after the look maps its local -X onto -Z:
+-- Ry(-90) * (-1,0,0) = (0,0,-1). Per species, since the pack only
+-- confirms the -X convention for the fish and the shark.
+--
+-- Only for an imported rig: CreatureSpawner's placeholder body is built
+-- facing -Z already, so applying the offset to it would turn the fallback
+-- creatures sideways. The spawner flags which one this is.
+local function facingOffset(model: Model, species): CFrame
+	local degrees = model:GetAttribute("ImportedRig") and (species.ModelYawOffsetDegrees or 0) or 0
+	if degrees == 0 then
+		return CFrame.identity
+	end
+	return CFrame.Angles(0, math.rad(degrees), 0)
+end
+
 function CreatureBrain.new(model: Model, species, home: Vector3, onAttack)
 	local root = model.PrimaryPart
 	local self = setmetatable({
@@ -38,6 +56,7 @@ function CreatureBrain.new(model: Model, species, home: Vector3, onAttack)
 		species = species,
 		home = home,
 		root = root,
+		facingOffset = facingOffset(model, species),
 		alignPosition = root:FindFirstChild("MoveTarget"),
 		alignOrientation = root:FindFirstChild("FaceTarget"),
 		position = root.Position,
@@ -137,7 +156,7 @@ function CreatureBrain:Update(dt: number, playerRoot: BasePart?, playerDistance:
 		self.alignPosition.Position = self.position
 	end
 	if self.alignOrientation then
-		self.alignOrientation.CFrame = CFrame.lookAt(self.position, self.position + self.heading)
+		self.alignOrientation.CFrame = CFrame.lookAt(self.position, self.position + self.heading) * self.facingOffset
 	end
 end
 

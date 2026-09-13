@@ -6,7 +6,11 @@
 --   RegionKind    "Treasure" | "Creature"  (required)
 --   RegionCount   number of things to spawn in it (default per consumer)
 --   RegionSpecies for creatures: species Id, or several separated by
---                 commas ("Sardine,Tortue") -- picked at random per spawn
+--                 commas ("PoissonRecif,TortueMarine") -- picked at
+--                 random per spawn. Old names (Sardine, Tortue, Raie,
+--                 Requin, Baudroie) still resolve via CreaturesConfig
+--                 .Aliases, so regions tagged in Studio before the real
+--                 assets arrived keep spawning.
 --   RegionEnabled false to keep a region placed but inactive
 --
 -- Regions can live anywhere in Workspace (inside the wreck model, the cave

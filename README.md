@@ -62,11 +62,15 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   `CurrentFeedback.client.lua` gère le léger élargissement du FOV, les traits de
   vitesse et le son optionnel.
 - **Créatures** — `CreaturesConfig.lua` (espèces : profondeur, rareté,
-  comportement Passive/Skittish/Predator, vitesses, dégâts),
-  `CreatureBrain.lua` (errance / fuite / poursuite / attaque) et
-  `CreatureSpawner.server.lua` (spawn par régions ou repli procédural, tick à
-  faible fréquence avec LOD distance). Corps placeholder tant qu'aucun modèle
-  n'est fourni.
+  comportement Passive/Skittish/Predator, vitesses, dégâts, taille réelle et
+  nom du modèle importé), `CreatureBrain.lua` (errance / fuite / poursuite /
+  attaque) et `CreatureSpawner.server.lua` (spawn par régions ou repli
+  procédural, tick à faible fréquence avec LOD distance, `AnimationController`
+  pour les rigs importés). Les 5 espèces correspondent 1:1 aux 5 modèles
+  riggés/animés du pack « Archipel des Profondeurs V2 » :
+  `PoissonRecif`, `TortueMarine`, `RaieManta`, `RequinRecif`,
+  `MeduseLumineuse`. Corps placeholder tant que le modèle n'est pas importé —
+  voir « Importer les animaux » ci-dessous.
 - **Épave géante (`MegaWreckShip`)** — `Workspace/World/Underwater/WreckZone/
   MegaWreckShip`, un navire massif (~724×254×131 studs à l'échelle actuelle,
   9 salles nommées sur plusieurs ponts, mâts, canons, escaliers, corridors
@@ -78,7 +82,7 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   remplacer pièce par pièce par de vrais `MeshPart` si le modèle est importé
   plus tard dans Studio. Brèches dans la coque (`EntryPoints`), salles de
   loot (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une
-  zone de spawn de créatures (`Requin`/`Raie`) et des repères (`Landmarks`,
+  zone de spawn de créatures (`RequinRecif`/`RaieManta`) et des repères (`Landmarks`,
   `InteractionPoints`) sont déjà en place. Éclairage intérieur complet sous
   `MegaWreckShip/Lighting` (`CorridorLights`/`RoomLights`/`EntranceLights`/
   `NavigationLights`/`AmbientLights`, ~60 `PointLight` au total, palette
@@ -100,13 +104,17 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
-- **Assets** : placer les modèles dans `ReplicatedStorage/Assets/Creatures/<Id>`
-  (un `Model` avec `PrimaryPart`, orienté vers -Z) — le spawner les clone à la
-  place du placeholder. Ne rien mettre à la main dans `ReplicatedStorage/Shared`
-  ni dans les dossiers synchronisés par Rojo : ils sont écrasés à chaque sync.
+- **Assets** : placer les modèles dans
+  `ReplicatedStorage/Assets/Creatures/<ModelName>` (un `Model` avec
+  `PrimaryPart`) — le spawner les clone à la place du placeholder. Le `<Id>` de
+  l'espèce fonctionne aussi, si le modèle a été renommé après import. Ne rien
+  mettre à la main dans `ReplicatedStorage/Shared` ni dans les dossiers
+  synchronisés par Rojo : ils sont écrasés à chaque sync.
 - **Zones de spawn** : n'importe quel Part avec le tag `SpawnRegion` (Tag
   Editor) et les Attributes `RegionKind` (`Treasure` / `Creature`),
-  `RegionCount`, `RegionSpecies` (`"Sardine,Tortue"`), `RegionEnabled`. Sa boîte
+  `RegionCount`, `RegionSpecies` (`"PoissonRecif,TortueMarine"` ; les anciens
+  noms `Sardine`/`Tortue`/`Raie`/`Requin`/`Baudroie` restent valides via
+  `CreaturesConfig.Aliases`), `RegionEnabled`. Sa boîte
   (ou sa sphère) est le volume ; il peut vivre dans le modèle de l'épave, de la
   grotte… Dès qu'une région d'un type existe, le placement procédural de ce type
   est désactivé.
@@ -119,6 +127,52 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   suivent l'instance. Rien de posé à la main n'est jamais supprimé par le
   générateur.
 
+#### Importer les animaux (FBX -> Studio) et publier leurs animations
+
+Les modèles et leurs clips viennent du pack « Archipel des Profondeurs V2 ».
+Tout ce qui décrit l'animal lui-même dans `CreaturesConfig.lua` (taille, nom du
+mesh, nom des clips) vient du rapport de vérification du pack, pas d'une
+estimation. **Les identifiants d'animation sont volontairement `nil`** : un
+asset id n'existe qu'après publication sous le compte/groupe propriétaire du
+jeu, il ne peut pas être deviné. Tant qu'ils sont `nil`, tout fonctionne — la
+créature nage simplement sans animation de corps.
+
+| Espèce (`Id`) | Modèle à importer (`ModelName`) | Mesh | Os |
+| --- | --- | --- | --- |
+| `PoissonRecif` | `01_Poisson_Recif` | `01_Poisson_Recif_Mesh` | 5 |
+| `RequinRecif` | `02_Requin_Recif` | `02_Requin_Recif_Mesh` | 6 |
+| `RaieManta` | `03_Raie_Manta` | `03_Raie_Manta_Mesh` | 7 |
+| `TortueMarine` | `04_Tortue_Marine` | `04_Tortue_Marine_Mesh` | — |
+| `MeduseLumineuse` | `05_Meduse_Lumineuse` | `05_Meduse_Lumineuse_Mesh` | — |
+
+1. **Modèle** — *Avatar → 3D Importer*, charger le `.fbx` de l'espèce, importer
+   le rig (pas d'avatar/`Humanoid`). Renommer le `Model` obtenu exactement comme
+   la colonne `ModelName`, définir son `PrimaryPart` sur le mesh, et le placer
+   dans `ReplicatedStorage/Assets/Creatures`.
+2. **Animations** — chaque `.fbx` d'espèce contient **deux** takes,
+   `Nage_Lente` et `Nage_Rapide` (30 fps). L'importeur d'animations de Roblox
+   n'accepte qu'un cycle par fichier : utiliser les fichiers mono-clip du
+   dossier `Roblox_Animations/` du pack, un par take. Ouvrir chaque clip dans
+   l'*Animation Editor*, puis *Publish to Roblox* sous le compte/groupe qui
+   possède le jeu.
+3. **Ids** — coller les ids obtenus dans `CreaturesConfig.lua`,
+   `SlowSwimAnimationId` (= `Nage_Lente`) et `FastSwimAnimationId`
+   (= `Nage_Rapide`), au format `"rbxassetid://..."`. Le cerveau choisit seul le
+   clip : lent en errance, rapide en fuite ou en poursuite. Un id faux ou non
+   publié produit un `warn` et la créature nage sans animation — il ne fait
+   jamais tomber le spawner.
+4. **Orientation** — les modèles du pack regardent vers `-X` alors que Roblox
+   pilote vers `-Z`. `ModelYawOffsetDegrees = -90` corrige ça, uniquement pour
+   les rigs importés (le placeholder est déjà construit face à `-Z`). Si un
+   animal nage de travers après import, c'est ce champ qu'il faut ajuster (le
+   pack ne confirme la convention `-X` que pour le poisson et le requin).
+5. **Échelle** — le pack est en mètres à `1 m = 1/0.28 stud` (`StudsPerMetre`).
+   Les `Size` de la config sont les dimensions mesurées converties à ce taux
+   (requin 16,85 studs de long, raie 14,57 studs d'envergure). C'est
+   volontairement **différent** de la convention « 1 stud = 1 m » utilisée pour
+   la profondeur : à 1 stud/m un requin de récif serait plus petit qu'un
+   avatar.
+
 ### Pas encore construit
 
 Inventaire, vente / argent (Coins), équipements (Bouteille, Combinaison, Palmes,
@@ -129,6 +183,27 @@ sauvegarde (DataStoreService).
 
 L'architecture 500 m est conçue pour être étendue plus tard (1000/2000/3000/4000 m)
 sans réécriture, mais ces paliers ne sont **pas** développés en V1.
+
+## Tests
+
+Il n'y a pas de runtime Roblox hors de Studio, donc `tests/` assemble les
+vrais modules du jeu au-dessus d'un faux minimal de l'API Roblox
+(`tests/stub.lua`) et les **exécute** avec le CLI `luau` :
+
+```sh
+python3 tests/build_creature_test.py && luau tests/creature_test.lua
+```
+
+123 vérifications sur le système de créatures : cohérence de
+`CreaturesConfig` (bandes de profondeur sans trou entre 5 et 495 m, poursuite
+toujours plus lente que le sprint du joueur, conversion mètres→studs), machine
+à états du cerveau (errance / fuite / poursuite / attaque + cooldown),
+orientation des modèles importés vs placeholder, résolution des anciens noms
+d'espèces, et chargement/bascule des clips de nage. Le fake est volontairement
+strict — un `Enum` inexistant y lève une erreur comme dans Studio, ce qu'une
+analyse statique ne voit pas.
+
+Analyse statique en complément : `luau-analyze $(find src -name "*.lua")`.
 
 ## Ouvrir le projet dans Roblox Studio (via Rojo)
 

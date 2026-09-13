@@ -326,7 +326,7 @@ function CaveRegionBuilder.Build(data, config, parentFolder: Instance)
 	})
 	addSpawnRegion(regionFolder, "CreatureRegion", config.WorldCenter, Vector3.new(900, 400, 900) * (scale / 2.2), "Creature", {
 		RegionCount = config.CreatureCount or 4,
-		RegionSpecies = config.CreatureSpecies or "Requin,Raie",
+		RegionSpecies = config.CreatureSpecies or "RequinRecif,RaieManta",
 	})
 
 	regionFolder:SetAttribute("DisplayName", config.DisplayName)
