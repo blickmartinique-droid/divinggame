@@ -2,42 +2,6 @@
   "name": "BlickDivingGame",
   "tree": {
     "$className": "DataModel",
-    "Workspace": {
-      "$className": "Workspace",
-      "World": {
-        "$className": "Folder",
-        "Underwater": {
-          "$className": "Folder",
-          "WreckZone": {
-            "$className": "Folder",
-            "TitanShip": {
-              "$path": "assets/ArchipelDesProfondeurs/02_NAVIRE_TITAN.rbxmx"
-            }
-          },
-          "ArchipelDesProfondeurs": {
-            "$className": "Folder",
-            "SurfaceAccueil": {
-              "$path": "assets/ArchipelDesProfondeurs/00_SURFACE_ACCUEIL.rbxmx"
-            },
-            "IleEtMontagne": {
-              "$path": "assets/ArchipelDesProfondeurs/01_ILE_ET_MONTAGNE.rbxmx"
-            },
-            "ReseauDeGrottes": {
-              "$path": "assets/ArchipelDesProfondeurs/03_RESEAU_DE_GROTTES.rbxmx"
-            },
-            "JardinAbyssal": {
-              "$path": "assets/ArchipelDesProfondeurs/04_JARDIN_ABYSSAL.rbxmx"
-            },
-            "RecifEtFauneFixe": {
-              "$path": "assets/ArchipelDesProfondeurs/05_RECIF_ET_FAUNE_FIXE.rbxmx"
-            },
-            "QuaiEtCamp": {
-              "$path": "assets/ArchipelDesProfondeurs/06_QUAI_ET_CAMP.rbxmx"
-            }
-          }
-        }
-      }
-    },
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
       "Shared": {

@@ -13,9 +13,8 @@
 --     dark shapes looming through the fog instead of empty blue.
 --   * Grottes arch and Épave seafloor plateau: landmarks at two example
 --     current locations, so the currents visibly lead somewhere (the
---     Épave plateau is also the foundation the real TITAN ship, delivered
---     as static geometry and positioned by ArchipelPlacement.server.lua,
---     sits on).
+--     Épave plateau is also the foundation MegaWreckShip.server.lua's
+--     much bigger wreck sits on).
 --   * Abyss glow: a few bioluminescent nodes near the floor.
 
 local Workspace = game:GetService("Workspace")
@@ -164,18 +163,18 @@ prop(arch, "ArchSpan", Vector3.new(100, 16, 24), CFrame.lookAt(archCenter + Vect
 
 -- Épave seafloor plateau ------------------------------------------------------------
 -- The small hand-built Hull/Bow/Deckhouse/Mast placeholder that used to
--- stand in for the wreck here has been replaced by the real TITAN ship
--- (delivered static geometry, ~329x55x75 studs, positioned by
--- ArchipelPlacement.server.lua at ~(358,-186,520)) at this same spot --
--- only the seafloor rise it rests on stays, plus a scattering of debris.
+-- stand in for the wreck here has been replaced by the real, vastly
+-- bigger MegaWreckShip.server.lua (a full multi-deck ship reconstructed
+-- from an imported model) at this same spot -- only the seafloor rise it
+-- rests on stays, plus a scattering of period-appropriate debris around it.
 
 local wreck = folder("EpaveWreck")
-local wreckCenter = Vector3.new(358, -223, 520)
-prop(wreck, "Plateau", Vector3.new(350, 24, 90), CFrame.new(wreckCenter.X, wreckCenter.Y - 15, wreckCenter.Z), Enum.Material.Slate, Color3.fromRGB(52, 60, 72))
+local wreckCenter = Vector3.new(150, -300, -150)
+prop(wreck, "Plateau", Vector3.new(160, 30, 140), CFrame.new(wreckCenter.X, wreckCenter.Y - 27, wreckCenter.Z), Enum.Material.Slate, Color3.fromRGB(52, 60, 72))
 local hullColor = Color3.fromRGB(70, 55, 45)
 for _ = 1, 8 do
 	local size = 3 + math.random() * 6
-	prop(wreck, "Debris", Vector3.new(size, size * 0.4, size * 0.7), CFrame.new(wreckCenter + Vector3.new((math.random() - 0.5) * 150, -8 + size * 0.2, (math.random() - 0.5) * 60)) * randomRotation(), Enum.Material.WoodPlanks, hullColor)
+	prop(wreck, "Debris", Vector3.new(size, size * 0.4, size * 0.7), CFrame.new(wreckCenter + Vector3.new((math.random() - 0.5) * 120, -10 + size * 0.2, (math.random() - 0.5) * 100)) * randomRotation(), Enum.Material.WoodPlanks, hullColor)
 end
 
 -- Abyss glow -------------------------------------------------------------------------
