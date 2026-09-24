@@ -163,6 +163,49 @@ currentLabel.Text = ""
 currentLabel.Visible = false
 currentLabel.Parent = container
 
+-- Loot bag: what the diver carries (sold on surfacing, lost on death --
+-- PlayerInventory on the server) and the banked total.
+local bagLabel = Instance.new("TextLabel")
+bagLabel.Name = "BagLabel"
+bagLabel.LayoutOrder = 6
+bagLabel.Size = UDim2.new(1, 0, 0, 16)
+bagLabel.BackgroundTransparency = 1
+bagLabel.TextXAlignment = Enum.TextXAlignment.Left
+bagLabel.Font = Enum.Font.GothamBold
+bagLabel.TextSize = 13
+bagLabel.TextColor3 = Color3.fromRGB(255, 214, 120)
+bagLabel.Text = "🎒 Sac vide · 💰 0"
+bagLabel.Parent = container
+
+-- Short toast in the upper middle of the screen for loot events.
+local toast = Instance.new("TextLabel")
+toast.Name = "LootToast"
+toast.AnchorPoint = Vector2.new(0.5, 0)
+toast.Position = UDim2.new(0.5, 0, 0, 90)
+toast.Size = UDim2.new(0, 460, 0, 34)
+toast.BackgroundTransparency = 1
+toast.Font = Enum.Font.GothamBold
+toast.TextSize = 22
+toast.TextColor3 = Color3.fromRGB(255, 225, 140)
+toast.TextStrokeTransparency = 0.4
+toast.TextTransparency = 1
+toast.Text = ""
+toast.Parent = screenGui
+
+local toastToken = 0
+local function showToast(text: string, color: Color3)
+	toastToken += 1
+	local token = toastToken
+	toast.Text = text
+	toast.TextColor3 = color
+	toast.TextTransparency = 0
+	task.delay(2.2, function()
+		if token == toastToken then
+			TweenService:Create(toast, TweenInfo.new(0.6), { TextTransparency = 1 }):Play()
+		end
+	end)
+end
+
 local TIER_LABELS = { Weak = "faible", Medium = "moyen", Strong = "fort", FastLane = "voie rapide" }
 
 local function showCurrent(currentPart: Instance)
@@ -289,3 +332,28 @@ end)
 
 refreshDepth(depthValue.Value)
 refreshOxygen(oxygenValue.Value, maxOxygenValue.Value)
+
+local carriedValue = player:WaitForChild("CarriedValue")
+local carriedCount = player:WaitForChild("CarriedCount")
+local leaderstats = player:WaitForChild("leaderstats")
+local coinsValue = leaderstats:WaitForChild("Pièces")
+
+local function refreshBag()
+	local bag = carriedCount.Value > 0 and string.format("🎒 %d objet%s · %d", carriedCount.Value, carriedCount.Value > 1 and "s" or "", carriedValue.Value) or "🎒 Sac vide"
+	bagLabel.Text = string.format("%s · 💰 %d", bag, coinsValue.Value)
+end
+carriedValue.Changed:Connect(refreshBag)
+carriedCount.Changed:Connect(refreshBag)
+coinsValue.Changed:Connect(refreshBag)
+refreshBag()
+
+local lootEvent = ReplicatedStorage:WaitForChild("LootEvent")
+lootEvent.OnClientEvent:Connect(function(kind: string, a, b, c)
+	if kind == "Collected" then
+		showToast(string.format("+ %s (%d) -- remonte pour le vendre", a, b), Color3.fromRGB(255, 225, 140))
+	elseif kind == "Banked" then
+		showToast(string.format("Vendu : %d objet%s pour %d pièces (total %d)", b, b > 1 and "s" or "", a, c), Color3.fromRGB(140, 240, 160))
+	elseif kind == "Lost" then
+		showToast(string.format("Butin perdu : %d pièces", a), Color3.fromRGB(255, 110, 100))
+	end
+end)

@@ -38,6 +38,13 @@ local function onPlayerAdded(player: Player)
 	oxygenValue.Name = "Oxygen"
 	oxygenValue.Value = maxOxygenValue.Value
 	oxygenValue.Parent = player
+
+	-- A fresh life starts with full lungs: without this a diver who drowned
+	-- respawned at 0 and had to wait half a minute on the beach before the
+	-- next dive.
+	player.CharacterAdded:Connect(function()
+		oxygenValue.Value = maxOxygenValue.Value
+	end)
 end
 
 local function drown(player: Player)

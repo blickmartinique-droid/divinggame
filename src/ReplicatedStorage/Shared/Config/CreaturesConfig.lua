@@ -1,8 +1,9 @@
 -- Marine creature species. Each entry is data only; the behaviour itself
 -- lives in CreatureBrain (server) and is selected by the Behavior field:
 --
---   "Passive"  wanders, ignores players entirely (reef fish, jellyfish).
---   "Skittish" wanders, darts away when a player comes within FleeDistance.
+--   "Passive"  wanders, ignores players entirely (jellyfish).
+--   "Skittish" wanders, darts away when a player comes within FleeDistance
+--              (reef fish scattering from a diver, turtles, mantas).
 --   "Predator" wanders, chases any underwater player within ChaseDistance,
 --              bites when within AttackRange, gives up past LoseDistance.
 --
@@ -29,6 +30,11 @@
 -- model so that nose ends up along Roblox's -Z, which is the direction
 -- CreatureBrain steers. Verify it per species after importing -- the pack
 -- only confirms the axis for those two.
+--
+-- LIFE -- SchoolSize > 1 spawns the species as shoals that move as one
+-- (CreatureBrain's School); Bob = { Amplitude, Speed } adds a vertical
+-- pulse-and-drift. Until the real models are imported, every species is
+-- drawn by CreatureBodies (a detailed procedural body per species).
 --
 -- ANIMATIONS -- deliberately left nil. The clips exist in the pack but
 -- have NOT been published to Roblox, and an asset id cannot be guessed:
@@ -62,13 +68,16 @@ return {
 			Id = "PoissonRecif",
 			Name = "Poisson de récif",
 			ModelName = "01_Poisson_Recif", -- ReplicatedStorage.Assets.Creatures.<ModelName>
-			Behavior = "Passive",
+			Behavior = "Skittish",
 			Weight = 60,
 			MinDepth = 3,
 			MaxDepth = 120,
 			Speed = 8,
+			FleeSpeed = 15,
+			FleeDistance = 12,
 			TurnResponsiveness = 3,
 			WanderRadius = 40,
+			SchoolSize = 8,
 			-- 1.223 x 0.572 x 0.753 m
 			Size = Vector3.new(4.37, 2.04, 2.69),
 			Color = Color3.fromRGB(60, 180, 200),
@@ -155,6 +164,7 @@ return {
 			Speed = 3, -- barely swims; it drifts
 			TurnResponsiveness = 1,
 			WanderRadius = 50,
+			Bob = { Amplitude = 1.2, Speed = 1.1 },
 			-- 1.360 x 2.143 x 1.624 m -- corrected against the real mesh
 			-- (05_Meduse_Lumineuse_Mesh in Faune_Marine_Animee.blend's own
 			-- gallery scene): the pack's verification report had this one

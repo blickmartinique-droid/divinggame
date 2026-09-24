@@ -25,6 +25,12 @@
       "Creatures": {
         "$path": "src/ServerScriptService/Creatures"
       }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "$properties": {
+        "FallenPartsDestroyHeight": -1000
+      }
     }
   }
 }

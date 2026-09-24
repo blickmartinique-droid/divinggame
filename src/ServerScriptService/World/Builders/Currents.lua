@@ -44,21 +44,9 @@ local DEFAULT_PATH_WIDTH = 12
 local VORTEX_STRAND_COUNT = 14
 local VORTEX_INNER_RADIUS_FRACTION = 0.12
 
-local currentsFolder = Workspace:FindFirstChild("Currents")
-if not currentsFolder then
-	currentsFolder = Instance.new("Folder")
-	currentsFolder.Name = "Currents"
-	currentsFolder.Parent = Workspace
-end
+local Currents = {}
 
--- Idempotent: clear what a previous run of this script produced (examples
--- + every visual), keep anything placed by hand.
-for _, instance in ipairs(CollectionService:GetTagged(GENERATED_TAG)) do
-	instance:Destroy()
-end
-for _, instance in ipairs(CollectionService:GetTagged(VISUAL_TAG)) do
-	instance:Destroy()
-end
+local currentsFolder: Instance
 
 local function markVisual(instance: Instance)
 	CollectionService:AddTag(instance, VISUAL_TAG)
@@ -495,91 +483,147 @@ local function examplePath(props)
 	})
 end
 
--- A gentle drift just past the beach shelf, easing new swimmers out toward
--- open water. Weak + no boost, so it's felt but never turns into a shortcut.
-exampleDirectional({
-	Name = "ReefDrift",
-	DisplayName = "Dérive du récif",
-	Position = Vector3.new(0, -15, -260),
-	Direction = Vector3.new(0, 0, -1),
-	Length = 200,
-	Width = 90,
-	Height = 40,
-	Tier = "Weak",
-})
-
--- A real fast lane across the open Récif: a multi-leg path that climbs,
--- turns, and dives, showing the trajectory system end to end.
-examplePath({
-	Name = "RecifFastLane",
-	DisplayName = "Voie rapide du récif",
-	Tier = "FastLane",
-	Width = 14,
-	Points = {
-		Vector3.new(420, -45, 120),
-		Vector3.new(300, -40, 40),
-		Vector3.new(160, -55, -30),
-		Vector3.new(20, -80, -120),
-		Vector3.new(-120, -120, -180),
-	},
-})
-
--- A strong corridor current deeper down (Grottes range), diagonal and
--- descending, the kind meant to eventually run through an actual canyon.
-exampleDirectional({
-	Name = "GrottesCorridorCurrent",
-	DisplayName = "Couloir des grottes",
-	Position = Vector3.new(-200, -180, 300),
-	Direction = Vector3.new(1, -0.15, -1),
-	Length = 400,
-	Width = 45,
-	Height = 45,
-	Tier = "Strong",
-})
-
--- A vortex sitting where a wreck or cave mouth would naturally go (Épave
--- range) -- demonstrates the circular/spiral shape and a strong pull.
-exampleCircular({
-	Name = "EpaveVortex",
-	DisplayName = "Tourbillon de l'épave",
-	Position = Vector3.new(150, -300, -150),
-	Radius = 70,
-	Spin = 1,
-	Tier = "Strong",
-})
-
--- A smaller, calmer vortex near the surface as a second example of the
--- circular shape at a gentler strength.
-exampleCircular({
-	Name = "ShallowEddy",
-	DisplayName = "Remous peu profond",
-	Position = Vector3.new(-250, -40, -100),
-	Radius = 35,
-	Spin = -1,
-	Tier = "Medium",
-})
-
--- A vertical lift from the Épave range back up toward the Grottes: a
--- straight-up path, the quick way home after a deep dive.
-examplePath({
-	Name = "EpaveUpdraft",
-	DisplayName = "Remontée de l'épave",
-	Tier = "Strong",
-	Width = 10,
-	Points = {
-		Vector3.new(260, -330, -260),
-		Vector3.new(262, -250, -262),
-		Vector3.new(270, -170, -270),
-	},
-})
-
--- Decorate everything, hand-placed and generated alike (every visual is
--- tagged as it is created, so the next run clears exactly those), and keep
--- decorating currents added later at runtime.
-for _, instance in ipairs(currentsFolder:GetChildren()) do
-	decorateCurrent(instance)
+-- Every current's volume is reserved so later decor keeps clear of it.
+local function reserve(layout, instance: Instance)
+	local shape = instance:GetAttribute("CurrentShape")
+	if shape == "Directional" and instance:IsA("BasePart") then
+		layout:ReserveBox(instance.Name, instance.CFrame, instance.Size)
+	elseif shape == "Circular" and instance:IsA("BasePart") then
+		local radius = instance:GetAttribute("CurrentRadius") or 40
+		layout:ReserveCylinder(instance.Name, instance.Position, radius, instance.Position.Y - radius * 0.3, instance.Position.Y + radius * 0.3)
+	elseif shape == "Path" then
+		local points = getPathPoints(instance)
+		local width = instance:GetAttribute("CurrentWidth") or DEFAULT_PATH_WIDTH
+		for i = 2, #points do
+			layout:ReserveCapsule(instance.Name, points[i - 1].Position, points[i].Position, width)
+		end
+	end
 end
 
-currentsFolder.ChildAdded:Connect(function(instance)
-	task.defer(decorateCurrent, instance)
-end)
+function Currents.Build(layout)
+	local existing = Workspace:FindFirstChild("Currents")
+	if existing then
+		currentsFolder = existing
+	else
+		local folder = Instance.new("Folder")
+		folder.Name = "Currents"
+		folder.Parent = Workspace
+		currentsFolder = folder
+	end
+
+	-- Idempotent: clear what a previous build produced (examples + every
+	-- visual), keep anything placed by hand.
+	for _, instance in ipairs(CollectionService:GetTagged(GENERATED_TAG)) do
+		instance:Destroy()
+	end
+	for _, instance in ipairs(CollectionService:GetTagged(VISUAL_TAG)) do
+		instance:Destroy()
+	end
+
+	-- A gentle drift just past the beach shelf, easing new swimmers out toward
+	-- open water. Weak + no boost, so it's felt but never turns into a shortcut.
+	exampleDirectional({
+		Name = "ReefDrift",
+		DisplayName = "Dérive du récif",
+		Position = Vector3.new(0, -15, -260),
+		Direction = Vector3.new(0, 0, -1),
+		Length = 200,
+		Width = 90,
+		Height = 40,
+		Tier = "Weak",
+	})
+
+	-- A real fast lane across the open Récif: a multi-leg path that climbs,
+	-- turns, and dives, showing the trajectory system end to end.
+	examplePath({
+		Name = "RecifFastLane",
+		DisplayName = "Voie rapide du récif",
+		Tier = "FastLane",
+		Width = 14,
+		Points = {
+			Vector3.new(420, -45, 120),
+			Vector3.new(300, -40, 40),
+			Vector3.new(160, -55, -30),
+			Vector3.new(20, -80, -120),
+			Vector3.new(-120, -120, -180),
+		},
+	})
+
+	-- A strong corridor current deeper down (Grottes range), diagonal and
+	-- descending, the kind meant to eventually run through an actual canyon.
+	exampleDirectional({
+		Name = "GrottesCorridorCurrent",
+		DisplayName = "Couloir des grottes",
+		Position = Vector3.new(-200, -180, 300),
+		Direction = Vector3.new(1, -0.15, -1),
+		Length = 400,
+		Width = 45,
+		Height = 45,
+		Tier = "Strong",
+	})
+
+	-- The Épave vortex swirls in the open water just off the wreck's stern
+	-- (the anchor MegaWreckShip publishes from its real hull), never inside it.
+	local vortexPosition = layout:GetAnchor("WreckVortex") or Vector3.new(150, -300, -150)
+	exampleCircular({
+		Name = "EpaveVortex",
+		DisplayName = "Tourbillon de l'épave",
+		Position = vortexPosition,
+		Radius = 70,
+		Spin = 1,
+		Tier = "Strong",
+	})
+
+	-- A smaller, calmer vortex near the surface as a second example of the
+	-- circular shape at a gentler strength.
+	exampleCircular({
+		Name = "ShallowEddy",
+		DisplayName = "Remous peu profond",
+		Position = Vector3.new(-250, -40, -100),
+		Radius = 35,
+		Spin = -1,
+		Tier = "Medium",
+	})
+
+	-- A vertical lift from the Épave range back up toward the Grottes -- the
+	-- quick way home after a deep dive. Stands just beyond the vortex's rim,
+	-- on the first bearing where the whole column is clear of the hull, the
+	-- mountains and the other currents.
+	local updraftTopY = -170
+	local updraftPoints = nil
+	for step = 0, 11 do
+		local angle = step * math.pi / 6
+		local base = vortexPosition + Vector3.new(math.cos(angle), 0, math.sin(angle)) * 105
+		local bottom = Vector3.new(base.X, vortexPosition.Y - 30, base.Z)
+		local top = Vector3.new(base.X, updraftTopY, base.Z)
+		if layout:IsSegmentFree(bottom, top, 14) then
+			updraftPoints = { bottom, bottom:Lerp(top, 0.5) + Vector3.new(2, 0, -2), top + Vector3.new(8, 0, -8) }
+			break
+		end
+	end
+	if updraftPoints then
+		examplePath({
+			Name = "EpaveUpdraft",
+			DisplayName = "Remontée de l'épave",
+			Tier = "Strong",
+			Width = 10,
+			Points = updraftPoints,
+		})
+	else
+		warn("[Currents] no clear column found for EpaveUpdraft")
+	end
+
+	-- Decorate everything, hand-placed and generated alike (every visual is
+	-- tagged as it is created, so a rebuild clears exactly those), and keep
+	-- decorating currents added later at runtime.
+	for _, instance in ipairs(currentsFolder:GetChildren()) do
+		decorateCurrent(instance)
+		reserve(layout, instance)
+	end
+
+	currentsFolder.ChildAdded:Connect(function(instance)
+		task.defer(decorateCurrent, instance)
+	end)
+end
+
+return Currents

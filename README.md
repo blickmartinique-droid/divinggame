@@ -20,9 +20,23 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   verticale en Idle. Seul système à piloter la rotation du personnage pendant la
   nage (`Humanoid.AutoRotate` désactivé pour éviter tout conflit avec le Shift
   Lock).
-- **Océan & plage** — `OceanGenerator.server.lua` : océan de 500 m de profondeur
-  sur 2000×2000 studs (Terrain Water), plage naturelle au niveau de la mer avec
-  transition en pente douce vers le large, ambiance lumière/eau de base.
+- **Construction du monde (ordre garanti)** — `World/WorldBootstrap.server.lua`
+  est le seul script qui construit le monde : il exécute les modules de
+  `World/Builders/` dans un ordre fixe (`Ocean` → `CaveRegions` →
+  `MegaWreckShip` → `Currents` → `BiomeDecor`) puis lève
+  `Workspace.WorldReady`, que les spawners attendent. Avant, ces étapes
+  étaient des scripts indépendants sans ordre garanti par Roblox (le
+  remplissage d'eau pouvait noyer les grottes, les spawners rater les zones
+  de l'épave). `WorldLayout` partage les volumes réservés (épave, montagnes,
+  courants, plage) pour que les décors ne traversent rien, et un `Random`
+  à graine fixe : la carte est identique à chaque démarrage.
+- **Océan & plage** — `Builders/Ocean.lua` : vide d'abord tout terrain
+  resté dans la place, puis océan de 500 m sur 2000×2000 studs (Terrain
+  Water) sur un fond rocheux, plage naturelle en pente douce, ambiance,
+  et murs invisibles au bord de l'océan (plus de sortie dans le vide).
+  Le plan de destruction de Roblox (`FallenPartsDestroyHeight`, -500 par
+  défaut = exactement le fond marin) est abaissé à -1000 via
+  `default.project.json` (propriété réservée aux plugins, pas aux scripts).
 - **Zones** — `ZonesConfig.lua` définit 4 tranches de profondeur (0–100 Récif,
   100–250 Grottes, 250–400 Épave, 400–500 Entrée de l'abysse), chacune avec ses
   propres réglages de brouillard/luminosité. `ZoneAnnouncer.client.lua` interpole
@@ -35,11 +49,19 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   de chaque joueur (autoritatif serveur).
 - **Oxygène** — `OxygenManager.server.lua` : consomme/régénère l'oxygène selon la
   profondeur (autoritatif serveur), avec `MaxOxygen`/`OxygenDrainPerSecond` par
-  joueur (prêt pour un futur équipement type Bouteille). Tue le joueur
-  (`Humanoid.Health = 0`) si l'oxygène atteint 0.
-- **Trésors** — `TreasureSpawner.server.lua` : 60 trésors répartis sur les 4
-  zones, ramassage via `ProximityPrompt` server-side, rareté qui augmente avec la
-  profondeur. Pas encore d'inventaire : la collecte log seulement pour l'instant.
+  joueur (prêt pour un futur équipement type Bouteille), remis au maximum à
+  chaque réapparition. Tue le joueur (`Humanoid.Health = 0`) à 0.
+- **Butin** — `PlayerInventory.lua` + `InventoryManager.server.lua` : un
+  trésor ramassé va dans le **sac** (`CarriedValue`/`CarriedCount`), vendu
+  automatiquement en remontant à la surface (`leaderstats.Pièces`), **perdu**
+  à la mort. Le HUD affiche le sac, les pièces et une notification à chaque
+  événement (`ReplicatedStorage.LootEvent`).
+- **Trésors** — `TreasureSpawner.server.lua` : des « emplacements » qui se
+  re-remplissent 90–150 s après chaque ramassage (l'océan ne se vide plus).
+  Chaque `SpawnRegion` Treasure (salles de l'épave, cavernes) fournit ses
+  emplacements ; chaque zone de profondeur est complétée en pleine eau
+  jusqu'à 15 trésors minimum, hors des volumes réservés. Rareté croissante
+  avec la profondeur.
 - **UI de gameplay** — `GameplayHUD.client.lua` : profondeur, barre d'oxygène,
   nom de la zone actuelle (les trois valeurs viennent des systèmes serveur
   ci-dessus, cette UI ne fait qu'afficher).
@@ -52,7 +74,7 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   Attributes (`CurrentTier`, `CurrentMaxSpeed`, `CurrentAcceleration`,
   `CurrentExitDeceleration`, `CurrentCentering`, `CurrentWidth`,
   `CurrentVisualIntensity`, `CurrentDisplayName`, `CurrentSoundId`… voir
-  `CurrentsConfig.lua`). `CurrentGenerator.server.lua` construit les visuels de
+  `CurrentsConfig.lua`). `Builders/Currents.lua` construit les visuels de
   tout ce qui se trouve dans `Workspace/Currents` (exemples générés **et**
   courants posés à la main) ; `UnderwaterCurrents.client.lua` calcule la poussée
   (entrée/sortie progressives, direction lissée, recentrage sur la trajectoire,
@@ -62,45 +84,52 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   `CurrentFeedback.client.lua` gère le léger élargissement du FOV, les traits de
   vitesse et le son optionnel.
 - **Créatures** — `CreaturesConfig.lua` (espèces : profondeur, rareté,
-  comportement Passive/Skittish/Predator, vitesses, dégâts, taille réelle et
-  nom du modèle importé), `CreatureBrain.lua` (errance / fuite / poursuite /
-  attaque) et `CreatureSpawner.server.lua` (spawn par régions ou repli
-  procédural, tick à faible fréquence avec LOD distance, `AnimationController`
-  pour les rigs importés). Les 5 espèces correspondent 1:1 aux 5 modèles
-  riggés/animés du pack « Archipel des Profondeurs V2 » :
+  comportement Passive/Skittish/Predator, vitesses, dégâts, taille réelle,
+  `SchoolSize` pour les bancs, `Bob` pour la dérive pulsée des méduses),
+  `CreatureBrain.lua` (errance / fuite / poursuite / attaque, **bancs** qui
+  nagent en formation et s'égaillent devant un plongeur) et
+  `CreatureSpawner.server.lua` (spawn par régions ; une espèce qu'aucune
+  région n'accueille garde sa population en pleine eau ; une région ne fait
+  naître que des espèces vivant à sa profondeur ; `RegionWanderRadius`
+  garde les habitants des grottes dans leur caverne). Les 5 espèces
+  correspondent 1:1 aux 5 modèles du pack « Archipel des Profondeurs V2 » :
   `PoissonRecif`, `TortueMarine`, `RaieManta`, `RequinRecif`,
-  `MeduseLumineuse`. Corps placeholder tant que le modèle n'est pas importé —
-  voir « Importer les animaux » ci-dessous.
+  `MeduseLumineuse`. **Tant que les FBX ne sont pas importés**, chaque animal
+  est dessiné par `CreatureBodies.lua` : un vrai corps détaillé par espèce
+  (poisson tropical rayé en 5 palettes — clown, chirurgien bleu, jaune,
+  ange, gramma —, requin gris à pointes noires, raie manta à chevrons
+  blancs, tortue à carapace écaillée, méduse translucide lumineuse à
+  tentacules), articulé par des `Motor6D` que `CreatureAnimator.client.lua`
+  anime localement (queue qui bat, ailes, nageoires, tentacules ; rythme
+  doublé en fuite/chasse). Voir « Importer les animaux » ci-dessous.
 - **Épave géante (`MegaWreckShip`)** — `Workspace/World/Underwater/WreckZone/
   MegaWreckShip`, un navire massif (~724×254×131 studs à l'échelle actuelle,
   9 salles nommées sur plusieurs ponts, mâts, canons, escaliers, corridors
   élargis). Reconstruit à partir de `MegaWreckShipData.lua` (table
   auto-générée, 645 entrées : nom/catégorie/position/rotation/taille/couleur,
-  une par pièce du modèle source) par `MegaWreckShip.server.lua`. Voir le
+  une par pièce du modèle source) par `Builders/MegaWreckShip.lua`. Voir le
   commentaire en tête de ce script pour la limite technique qui a motivé
   cette approche (boîtes orientées plutôt que le maillage réel) et comment la
   remplacer pièce par pièce par de vrais `MeshPart` si le modèle est importé
   plus tard dans Studio. Brèches dans la coque (`EntryPoints`), salles de
   loot (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une
-  zone de spawn de créatures (`RequinRecif`/`RaieManta`) et des repères (`Landmarks`,
+  zone de spawn de créatures (`RequinRecif`/`MeduseLumineuse`) et des repères (`Landmarks`,
   `InteractionPoints`) sont déjà en place. Éclairage intérieur complet sous
   `MegaWreckShip/Lighting` (`CorridorLights`/`RoomLights`/`EntranceLights`/
   `NavigationLights`/`AmbientLights`, ~60 `PointLight` au total, palette
   bleu/cyan sombre avec accent chaud dans les 3 salles majeures) — voir le
   commentaire "Interior lighting rework" dans le script pour le détail.
 - **4 régions montagnes/grottes** — `Workspace/World/Underwater/CaveRegions`,
-  reconstruites à partir de 4 modèles source (blockout, v2, v3 avec entrées, v4
-  entrées visibles) par `CaveRegionBuilder.lua` (partagé) + `CaveRegion1..4Data.lua`
-  (données auto-générées) + `CaveRegions.server.lua` (placement des 4 + courants
-  de liaison). Contrairement à `MegaWreckShip` (boîtes), ce sont ici de vrais
-  volumes de **Terrain** (Rock plein, Water creusé pour les grottes/tunnels) —
-  voir le commentaire en tête de `CaveRegionBuilder.lua` pour pourquoi (modèles
-  volontairement "blockout", le Terrain lissé de Roblox rend un résultat organique
-  là où des Parts auraient gardé un look cubique). Chaque région a ses vraies
-  entrées (jamais de trou visuel sans tunnel derrière — chaque brèche est
-  activement creusée jusqu'à la caverne centrale), ses ruines/terrasses/coraux
-  (Parts), ses `LootSpots`/zone de créatures (`SpawnRegion`, comme pour l'épave)
-  et ne touche jamais à `MegaWreckShip`.
+  construites par `Builders/CaveRegionBuilder.lua` à partir de 4 modèles
+  source (`CaveRegion1..4Data.lua`) et placées par `Builders/CaveRegions.lua`.
+  Vrais volumes de **Terrain** (Rock plein, Water creusé). Chaque région est
+  un mont sous-marin **enraciné au fond** (base évasée jusqu'à -500) avec
+  des cavernes **fermées** (coque rocheuse autour de chaque caverne), des
+  entrées qui débouchent réellement à l'extérieur, un puits vers le sommet,
+  des ruines/terrasses/coraux posés sur la roche (plus rien ne flotte ni
+  n'est enterré), et de la vie dans les cavernes : cristaux lumineux,
+  champignons bioluminescents, stalactites, vers luisants. Les courants de
+  liaison partent/arrivent aux vraies entrées des grottes.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
@@ -175,7 +204,7 @@ créature nage simplement sans animation de corps.
 
 ### Pas encore construit
 
-Inventaire, vente / argent (Coins), équipements (Bouteille, Combinaison, Palmes,
+Boutique / équipements (Bouteille, Combinaison, Palmes,
 Lampe, Sac), morphologies (Petit / Moyen / Grand), harpon, évitement d'obstacles
 des créatures (elles traversent le terrain), décoration détaillée des zones
 (Récif/Grottes/Épave/Abysses — volontairement laissée simple pour l'instant),
@@ -186,24 +215,31 @@ sans réécriture, mais ces paliers ne sont **pas** développés en V1.
 
 ## Tests
 
-Il n'y a pas de runtime Roblox hors de Studio, donc `tests/` assemble les
-vrais modules du jeu au-dessus d'un faux minimal de l'API Roblox
-(`tests/stub.lua`) et les **exécute** avec le CLI `luau` :
+Il n'y a pas de runtime Roblox hors de Studio, donc `tests/` monte **tous**
+les scripts du jeu, là où Rojo les placerait, au-dessus d'un faux minimal et
+strict de l'API Roblox (`tests/stub.lua` — un `Enum` inexistant lève une
+erreur comme dans Studio, le Terrain enregistre chaque remplissage) et les
+**exécute** avec le CLI `luau` :
 
 ```sh
-python3 tests/build_creature_test.py && luau tests/creature_test.lua
+python3 tests/build_tests.py
+luau tests/creature_test.lua   # 126 vérifications
+luau tests/world_test.lua      # 88 vérifications
 ```
 
-123 vérifications sur le système de créatures : cohérence de
-`CreaturesConfig` (bandes de profondeur sans trou entre 5 et 495 m, poursuite
-toujours plus lente que le sprint du joueur, conversion mètres→studs), machine
-à états du cerveau (errance / fuite / poursuite / attaque + cooldown),
-orientation des modèles importés vs placeholder, résolution des anciens noms
-d'espèces, et chargement/bascule des clips de nage. Le fake est volontairement
-strict — un `Enum` inexistant y lève une erreur comme dans Studio, ce qu'une
-analyse statique ne voit pas.
+- `creature_test` : cohérence de `CreaturesConfig`, machine à états du
+  cerveau, orientation des modèles, anciens noms d'espèces, clips de nage,
+  règle de population par espèce.
+- `world_test` : exécute le vrai `WorldBootstrap` puis les spawners et
+  vérifie la géométrie obtenue : fond marin sans trou, pas d'eau au-dessus
+  de la surface, montagnes enracinées, cavernes fermées, entrées ouvertes,
+  chaque courant ne traverse que de l'eau et jamais l'épave, pitons hors
+  des volumes réservés, 15 trésors minimum par zone et aucun enterré, les
+  5 espèces présentes, corps articulés.
 
-Analyse statique en complément : `luau-analyze $(find src -name "*.lua")`.
+Analyse statique en complément, avec les types Roblox :
+`luau-lsp analyze --definitions=globalTypes.d.luau --sourcemap=sourcemap.json src`
+(sourcemap générée par `rojo sourcemap default.project.json`).
 
 ## Ouvrir le projet dans Roblox Studio (via Rojo)
 

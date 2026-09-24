@@ -1,3 +1,15 @@
+-- Real modules, loaded through the registry like Studio would.
+local Shared = ReplicatedStorage.Shared
+CreaturesConfig = require(Shared.Config.CreaturesConfig)
+DepthUtils = require(Shared.Modules.DepthUtils)
+SpawnRegions = require(Shared.Modules.SpawnRegions)
+CreatureBrain = require(ServerScriptService.Creatures.CreatureBrain)
+-- No world is built in this suite: tell the spawner it may start.
+Workspace:SetAttribute("WorldReady", true)
+function RUN_SPAWNER()
+	RUN_SCRIPT("ServerScriptService", "Creatures", "CreatureSpawner")
+end
+
 -- Assertions -----------------------------------------------------------
 math.randomseed(20260913) -- reproducible spawns
 local failures, checks = 0, 0
@@ -72,7 +84,7 @@ local function resolve(id) return byId[id] or byId[CreaturesConfig.Aliases[id] o
 local REGION_STRINGS = {
 	"PoissonRecif,TortueMarine,RaieManta",
 	"RaieManta,RequinRecif",
-	"RequinRecif,RaieManta",
+	"RequinRecif,MeduseLumineuse",
 	"RequinRecif,MeduseLumineuse",
 	"Sardine,Tortue", -- legacy, must still resolve through Aliases
 	"Requin,Baudroie",
@@ -273,12 +285,20 @@ game:GetService("CollectionService"):AddTag(turtleRegion, "SpawnRegion")
 
 RUN_SPAWNER()
 creatures = Workspace:FindFirstChild("Creatures")
-check("region counts honoured (no fallback ring)", #creatures:GetChildren() == 12, #creatures:GetChildren())
-
+-- Regions host PoissonRecif/TortueMarine (12 animals); the three species
+-- no region hosts still get their open-water FallbackCount.
+local hostedCount, fallbackCount = 0, 0
 local spawnedIds = {}
-for _, model in ipairs(creatures:GetChildren()) do spawnedIds[model:GetAttribute("Species")] = true end
-check("legacy 'Sardine' spawned PoissonRecif or TortueMarine",
-	(spawnedIds.PoissonRecif or spawnedIds.TortueMarine) and not spawnedIds.RequinRecif)
+for _, model in ipairs(creatures:GetChildren()) do
+	local id = model:GetAttribute("Species")
+	spawnedIds[id] = true
+	if id == "PoissonRecif" or id == "TortueMarine" then hostedCount += 1 else fallbackCount += 1 end
+end
+check("region counts honoured", hostedCount == 12, hostedCount)
+check("unhosted species keep their open-water population",
+	fallbackCount == byId.RaieManta.FallbackCount + byId.RequinRecif.FallbackCount + byId.MeduseLumineuse.FallbackCount, fallbackCount)
+check("legacy 'Sardine' spawned PoissonRecif or TortueMarine", spawnedIds.PoissonRecif or spawnedIds.TortueMarine)
+local total = #creatures:GetChildren()
 check("no 'unknown species' warning for legacy ids", #WARNINGS == 0, WARNINGS[1])
 
 local imported = creatures:GetChildren()[1]
@@ -288,7 +308,7 @@ local controller = imported:FindFirstChild("CreatureAnimationController")
 check("AnimationController added (not a Humanoid)", controller ~= nil)
 check("no Humanoid on a non-humanoid animal", imported:FindFirstChildOfClass("Humanoid") == nil)
 check("Animator under the controller", controller and controller:FindFirstChildOfClass("Animator") ~= nil)
-check("two clips loaded per creature", #TRACKS == 12 * 2, #TRACKS)
+check("two clips loaded per creature", #TRACKS == total * 2, #TRACKS)
 
 local playing, loopedAll = 0, true
 for _, t in ipairs(TRACKS) do
@@ -296,12 +316,12 @@ for _, t in ipairs(TRACKS) do
 	if not t.Looped then loopedAll = false end
 end
 check("all swim clips loop", loopedAll)
-check("exactly one clip plays per creature at rest", playing == 12, playing)
+check("exactly one clip plays per creature at rest", playing == total, playing)
 local slowPlaying = 0
 for _, t in ipairs(TRACKS) do
 	if t.IsPlaying and string.find(t._id, "1000") then slowPlaying += 1 end
 end
-check("wandering creatures play the SLOW clip", slowPlaying == 12, slowPlaying)
+check("wandering creatures play the SLOW clip", slowPlaying == total, slowPlaying)
 
 -- Drive one heartbeat with a diver right on top of them: skittish species
 -- switch to the fast clip.
@@ -325,7 +345,7 @@ check("all 4 turtles are inside flee range", fleeing == 4, fleeing)
 check("fleeing creatures switch to the FAST clip", fastPlaying == fleeing, fastPlaying)
 local stillOne = 0
 for _, t in ipairs(TRACKS) do if t.IsPlaying then stillOne += 1 end end
-check("still exactly one clip per creature after switching", stillOne == 12, stillOne)
+check("still exactly one clip per creature after switching", stillOne == total, stillOne)
 
 -- Published ids but no imported rig: a placeholder is rigid geometry, so
 -- an Animator on it would deform nothing.

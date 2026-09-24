@@ -1,13 +1,19 @@
 -- Spawns marine creatures and ticks their brains. Placement comes from
--- hand-placed SpawnRegion parts (RegionKind = "Creature", see
--- SpawnRegions.lua) so populations follow the real map; with no such
--- region present it falls back to scattering each species' FallbackCount
--- across its own depth band in the open-ocean ring, which is what the
--- current prototype map uses.
+-- SpawnRegion parts (RegionKind = "Creature", see SpawnRegions.lua) -- the
+-- biome decor, wreck and caves all place their own, and more can be tagged
+-- by hand in Studio. A species no region hosts at all still gets its
+-- FallbackCount scattered through open water in its own depth band, so
+-- every animal in CreaturesConfig exists somewhere.
+--
+-- A region only spawns species that actually live at its depth (a reef
+-- fish listed for a 300 m cave would just swim up through the rock to its
+-- band); its RegionWanderRadius caps how far they roam from home.
+-- Schooling species (SchoolSize > 1) spawn as whole shoals sharing one
+-- CreatureBrain School.
 --
 -- Models: ReplicatedStorage.Assets.Creatures.<ModelName> (then .<Id>) is
--- cloned when present -- that is where the imported animal assets go, and
--- ModelName is the exact name the pack's FBX imports under, e.g.
+-- cloned when present -- where the imported animal assets go, ModelName
+-- being the exact name the pack's FBX imports under, e.g.
 -- "02_Requin_Recif". Otherwise a flat placeholder body is built from the
 -- species' Size/Color. Either way the spawner adds the movement
 -- constraints the brain drives.
@@ -17,19 +23,13 @@
 -- state picks the clip -- the slow swim while wandering, the fast one
 -- while fleeing or chasing. Both clip ids live in CreaturesConfig and are
 -- nil until the clips are published under this game's owner; with them
--- nil setupAnimator simply does nothing and the creature swims with a
--- still body, so nothing here breaks while they are missing. The clips
--- animate the body in place -- forward motion is this system's job, not
--- the animation's.
+-- nil setupAnimator simply does nothing.
 --
 -- Bodies are unanchored, server-owned physics parts moved by AlignPosition/
 -- AlignOrientation (not anchored + CFrame writes), so clients get smooth,
--- interpolated motion from the physics replication even though the brain
--- only updates targets a few times per second.
---
--- One loop ticks every creature at UPDATE_INTERVAL; creatures farther than
--- FAR_DISTANCE from every player only tick at FAR_INTERVAL, so a large
--- world full of fish nobody is near costs almost nothing.
+-- interpolated motion even though the brain only updates a few times per
+-- second. One loop ticks every creature at UPDATE_INTERVAL; creatures
+-- farther than FAR_DISTANCE from every player only tick at FAR_INTERVAL.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -41,13 +41,16 @@ local CreaturesConfig = require(ReplicatedStorage.Shared.Config.CreaturesConfig)
 local SpawnRegions = require(ReplicatedStorage.Shared.Modules.SpawnRegions)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 local CreatureBrain = require(script.Parent.CreatureBrain)
+local CreatureBodies = require(ReplicatedStorage.Shared.Modules.CreatureBodies)
+local WorldLayout = require(game:GetService("ServerScriptService").World.Builders.WorldLayout)
 
 local UPDATE_INTERVAL = 0.1
 local FAR_DISTANCE = 350
 local FAR_INTERVAL = 1
 local DEFAULT_REGION_COUNT = 5
 local FALLBACK_MIN_RADIUS = 200
-local FALLBACK_MAX_RADIUS = 450
+local FALLBACK_MAX_RADIUS = 700
+local PLACEMENT_ATTEMPTS = 24
 
 local creatureAttacked = Instance.new("BindableEvent")
 creatureAttacked.Name = "CreatureAttacked"
@@ -93,39 +96,10 @@ local function findAssetModel(species): Model?
 	return nil
 end
 
-local function buildPlaceholder(species): Model
-	local model = Instance.new("Model")
-
-	local body = Instance.new("Part")
-	body.Name = "Body"
-	body.Size = species.Size
-	body.Color = species.Color
-	body.Material = Enum.Material.SmoothPlastic
-	body.Parent = model
-
-	local tail = Instance.new("WedgePart")
-	tail.Name = "Tail"
-	tail.Size = Vector3.new(species.Size.X * 0.4, species.Size.Y * 0.8, species.Size.Z * 0.45)
-	tail.Color = species.Color
-	tail.Material = Enum.Material.SmoothPlastic
-	tail.CFrame = CFrame.new(0, 0, species.Size.Z / 2 + tail.Size.Z / 2) * CFrame.Angles(0, math.pi, 0)
-	tail.Parent = model
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = body
-	weld.Part1 = tail
-	weld.Parent = body
-
-	if species.Glow then
-		local light = Instance.new("PointLight")
-		light.Color = species.Glow
-		light.Range = 14
-		light.Brightness = 1.5
-		light.Parent = body
-	end
-
-	model.PrimaryPart = body
-	return model
+-- No imported rig yet: a detailed procedural body (see CreatureBodies),
+-- already facing -Z like the brain steers, with its own swim joints.
+local function buildPlaceholder(species, options): Model
+	return CreatureBodies.Build(species, options)
 end
 
 local function prepareModel(model: Model, species, imported: boolean)
@@ -220,11 +194,17 @@ end
 -- slow swim, fleeing or chasing uses the fast one. Falls back to whichever
 -- clip exists if only one has been published.
 local function applyAnimationState(entry, state: string)
-	local tracks = entry.tracks
-	if not tracks or entry.animationState == state then
+	if entry.animationState == state then
 		return
 	end
 	entry.animationState = state
+	-- Replicated once per state change: CreatureAnimator (client) beats a
+	-- procedural body's tail/fins faster while fleeing or chasing.
+	entry.model:SetAttribute("State", state)
+	local tracks = entry.tracks
+	if not tracks then
+		return
+	end
 
 	local wanted = (state == "Wander") and (tracks.slow or tracks.fast) or (tracks.fast or tracks.slow)
 	for _, track in pairs(tracks) do
@@ -251,15 +231,21 @@ local function onAttack(brain, playerRoot: BasePart)
 	end
 end
 
-local function spawnCreature(species, position: Vector3)
+local schools = {}
+
+local function spawnCreature(species, position: Vector3, options)
+	options = options or {}
 	local asset = findAssetModel(species)
-	local model = asset and asset:Clone() or buildPlaceholder(species)
+	local model = asset and asset:Clone() or buildPlaceholder(species, {
+		variant = options.variant or math.random(1, CreatureBodies.ReefPaletteCount),
+		scale = options.scale or (0.88 + math.random() * 0.24),
+	})
 	prepareModel(model, species, asset ~= nil)
 	model:PivotTo(CFrame.new(position))
 	model.Parent = creaturesFolder
 	model.PrimaryPart:SetNetworkOwner(nil)
 
-	local brain = CreatureBrain.new(model, species, position, onAttack)
+	local brain = CreatureBrain.new(model, species, position, onAttack, options)
 	local entry = { brain = brain, model = model, nextTick = 0, tracks = setupAnimator(model, species, asset ~= nil) }
 	applyAnimationState(entry, brain.state)
 	table.insert(brains, entry)
@@ -272,6 +258,26 @@ local function spawnCreature(species, position: Vector3)
 			end
 		end
 	end)
+end
+
+-- Spawns one creature, or a whole shoal for a schooling species (up to
+-- `budget` members). Returns how many were spawned.
+local function spawnGroup(species, position: Vector3, budget: number, wanderRadius: number?): number
+	local size = math.min(species.SchoolSize or 1, budget)
+	if size <= 1 then
+		spawnCreature(species, position, { wanderRadius = wanderRadius })
+		return 1
+	end
+	local school = CreatureBrain.newSchool(species, position, wanderRadius)
+	table.insert(schools, school)
+	-- One palette per shoal (a school of mixed colours reads as random
+	-- noise, a matching one as a real school), sizes within a few percent.
+	local variant = math.random(1, CreatureBodies.ReefPaletteCount)
+	for index = 1, size do
+		local spread = Vector3.new((index % 3 - 1) * 2, (index % 2) * 1.5, (math.floor(index / 3) % 3 - 1) * 2)
+		spawnCreature(species, position + spread, { school = school, wanderRadius = wanderRadius, variant = variant, scale = 0.95 + math.random() * 0.1 })
+	end
+	return size
 end
 
 local function pickWeighted(candidates)
@@ -290,59 +296,101 @@ local function pickWeighted(candidates)
 	return candidates[#candidates]
 end
 
-local function populateRegion(region: BasePart)
-	if region:GetAttribute("RegionKind") ~= "Creature" or region:GetAttribute("RegionEnabled") == false then
-		return
-	end
+local function livesAt(species, depth: number): boolean
+	return depth >= species.MinDepth and depth <= species.MaxDepth
+end
 
+-- The species a region would host: its explicit list, minus anything that
+-- does not live at the region's depth; or, without a list, every species
+-- whose band covers that depth.
+local function regionCandidates(region: BasePart)
+	local depth = DepthUtils.GetDepth(region.Position)
 	local candidates = {}
-	for _, id in ipairs(SpawnRegions.GetSpeciesList(region)) do
+	local listed = SpawnRegions.GetSpeciesList(region)
+	for _, id in ipairs(listed) do
 		local species = resolveSpecies(id)
-		if species then
-			table.insert(candidates, species)
-		else
+		if not species then
 			warn(string.format("[Creatures] SpawnRegion %s: unknown species %q", region:GetFullName(), id))
+		elseif not livesAt(species, depth) then
+			warn(string.format("[Creatures] SpawnRegion %s: %s does not live at %d m (%d-%d m)", region:GetFullName(), species.Id, depth, species.MinDepth, species.MaxDepth))
+		else
+			table.insert(candidates, species)
 		end
 	end
-	if #candidates == 0 then
-		-- No explicit list: any species whose depth band covers the region's center.
-		local depth = DepthUtils.GetDepth(region.Position)
+	if #listed == 0 then
 		for _, species in ipairs(CreaturesConfig.Species) do
-			if depth >= species.MinDepth and depth <= species.MaxDepth then
+			if livesAt(species, depth) then
 				table.insert(candidates, species)
 			end
 		end
 	end
+	return candidates
+end
+
+local populated = {}
+
+local function populateRegion(region: BasePart)
+	if populated[region] or region:GetAttribute("RegionKind") ~= "Creature" or region:GetAttribute("RegionEnabled") == false then
+		return
+	end
+	populated[region] = true
+
+	local candidates = regionCandidates(region)
 	if #candidates == 0 then
 		warn(string.format("[Creatures] SpawnRegion %s: no species fits its depth", region:GetFullName()))
 		return
 	end
 
 	local count = region:GetAttribute("RegionCount") or DEFAULT_REGION_COUNT
-	for _ = 1, count do
-		spawnCreature(pickWeighted(candidates), SpawnRegions.RandomPointIn(region))
+	local wanderRadius = region:GetAttribute("RegionWanderRadius")
+	local spawned = 0
+	while spawned < count do
+		local species = pickWeighted(candidates)
+		local position = SpawnRegions.RandomPointIn(region)
+		local depth = DepthUtils.GetDepth(position)
+		position = Vector3.new(position.X, DepthUtils.SURFACE_Y - math.clamp(depth, species.MinDepth, species.MaxDepth), position.Z)
+		spawned += spawnGroup(species, position, count - spawned, wanderRadius)
 	end
 end
 
+local function openWaterPoint(species): Vector3
+	local layout = WorldLayout.Current
+	local point
+	for _ = 1, PLACEMENT_ATTEMPTS do
+		local angle = math.random() * math.pi * 2
+		local radius = FALLBACK_MIN_RADIUS + math.random() * (FALLBACK_MAX_RADIUS - FALLBACK_MIN_RADIUS)
+		local depth = species.MinDepth + math.random() * (species.MaxDepth - species.MinDepth)
+		point = Vector3.new(math.cos(angle) * radius, DepthUtils.SURFACE_Y - depth, math.sin(angle) * radius)
+		if not layout or layout:IsFree(point, 10) then
+			break
+		end
+	end
+	return point
+end
+
+-- Open-water population for every species no enabled region hosts.
 local function populateFallback()
+	local hosted = {}
+	for _, region in ipairs(SpawnRegions.GetRegions("Creature")) do
+		for _, species in ipairs(regionCandidates(region)) do
+			hosted[species.Id] = true
+		end
+	end
 	for _, species in ipairs(CreaturesConfig.Species) do
-		for _ = 1, species.FallbackCount or 0 do
-			local angle = math.random() * math.pi * 2
-			local radius = FALLBACK_MIN_RADIUS + math.random() * (FALLBACK_MAX_RADIUS - FALLBACK_MIN_RADIUS)
-			local depth = species.MinDepth + math.random() * (species.MaxDepth - species.MinDepth)
-			spawnCreature(species, Vector3.new(math.cos(angle) * radius, DepthUtils.SURFACE_Y - depth, math.sin(angle) * radius))
+		if not hosted[species.Id] then
+			local spawned = 0
+			while spawned < (species.FallbackCount or 0) do
+				spawned += spawnGroup(species, openWaterPoint(species), species.FallbackCount - spawned, nil)
+			end
 		end
 	end
 end
 
-local regions = SpawnRegions.GetRegions("Creature")
-if #regions > 0 then
-	for _, region in ipairs(regions) do
-		populateRegion(region)
-	end
-else
-	populateFallback()
+SpawnRegions.WaitForWorld()
+for _, region in ipairs(SpawnRegions.GetRegions("Creature")) do
+	populateRegion(region)
 end
+populateFallback()
 SpawnRegions.OnRegionAdded(populateRegion)
 
 -- Tick loop -------------------------------------------------------------------------
@@ -370,6 +418,10 @@ RunService.Heartbeat:Connect(function(deltaTime)
 		return
 	end
 	local now = os.clock()
+
+	for _, school in ipairs(schools) do
+		school:Update(accumulated)
+	end
 
 	for _, entry in ipairs(brains) do
 		if now >= entry.nextTick then

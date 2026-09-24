@@ -30,9 +30,14 @@ V3.__index = function(t, k)
 		return function(a, b) return v3(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X) end
 	end
 	if k == "Dot" then return function(a, b) return a.X * b.X + a.Y * b.Y + a.Z * b.Z end end
+	if k == "Lerp" then return function(a, b, t) return v3(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Z + (b.Z - a.Z) * t) end end
+	if k == "Min" then return function(a, b) return v3(math.min(a.X, b.X), math.min(a.Y, b.Y), math.min(a.Z, b.Z)) end end
+	if k == "Max" then return function(a, b) return v3(math.max(a.X, b.X), math.max(a.Y, b.Y), math.max(a.Z, b.Z)) end end
+	if k == "Abs" then return function(a) return v3(math.abs(a.X), math.abs(a.Y), math.abs(a.Z)) end end
 	return rawget(V3, k)
 end
-Vector3 = { new = v3, zero = v3(0, 0, 0), one = v3(1, 1, 1) }
+Vector3 = { new = v3, zero = v3(0, 0, 0), one = v3(1, 1, 1), xAxis = v3(1, 0, 0), yAxis = v3(0, 1, 0), zAxis = v3(0, 0, 1) }
+IS_V3 = function(v) return getmetatable(v) == V3 end
 
 -- CFrame: real 3x3 rotation (columns = Right, Up, Back) + position -----
 local CF = {}
@@ -57,8 +62,21 @@ CF.__mul = function(a, b)
 	end
 	return cf(a.p + mulVec(a.r, b.p), mulMat(a.r, b.r))
 end
+CF.__add = function(a, b) return cf(a.p + b, a.r) end
+CF.__sub = function(a, b) return cf(a.p - b, a.r) end
 CF.__index = function(t, k)
 	if k == "Position" or k == "p" then return rawget(t, "p") end
+	if k == "Rotation" then return cf(v3(0, 0, 0), t.r) end
+	if k == "X" then return t.p.X end
+	if k == "Y" then return t.p.Y end
+	if k == "Z" then return t.p.Z end
+	if k == "Inverse" then
+		return function(s)
+			local r = s.r
+			local rt = { r[1], r[4], r[7], r[2], r[5], r[8], r[3], r[6], r[9] }
+			return cf(-mulVec(rt, s.p), rt)
+		end
+	end
 	if k == "LookVector" then return -col(t.r, 3) end
 	if k == "RightVector" then return col(t.r, 1) end
 	if k == "UpVector" then return col(t.r, 2) end
@@ -101,10 +119,44 @@ CFrame = {
 	end,
 }
 
+local C3 = {}
+C3.__index = C3
+function C3:Lerp(o, t) return setmetatable({ R = self.R + (o.R - self.R) * t, G = self.G + (o.G - self.G) * t, B = self.B + (o.B - self.B) * t }, C3) end
 Color3 = {
-	fromRGB = function(r, g, b) return { R = r / 255, G = g / 255, B = b / 255 } end,
-	new = function(r, g, b) return { R = r, G = g, B = b } end,
+	fromRGB = function(r, g, b) return setmetatable({ R = r / 255, G = g / 255, B = b / 255 }, C3) end,
+	new = function(r, g, b) return setmetatable({ R = r or 0, G = g or 0, B = b or 0 }, C3) end,
 }
+local function valueType(name)
+	return { new = function(...) return { _type = name, _args = { ... } } end }
+end
+NumberSequence = valueType("NumberSequence")
+NumberSequenceKeypoint = valueType("NumberSequenceKeypoint")
+ColorSequence = valueType("ColorSequence")
+ColorSequenceKeypoint = valueType("ColorSequenceKeypoint")
+NumberRange = valueType("NumberRange")
+TweenInfo = valueType("TweenInfo")
+UDim = valueType("UDim")
+UDim2 = { new = function(...) return { _type = "UDim2", _args = { ... } } end, fromScale = function(...) return { _type = "UDim2" } end, fromOffset = function(...) return { _type = "UDim2" } end }
+Vector2 = { new = function(x, y) return { X = x or 0, Y = y or 0 } end }
+
+-- Random: deterministic LCG with Roblox's API shape.
+local RandomMT = {}
+RandomMT.__index = RandomMT
+function RandomMT:_next()
+	self.state = (self.state * 1103515245 + 12345) % 2147483648
+	return self.state / 2147483648
+end
+function RandomMT:NextNumber(a, b)
+	local x = self:_next()
+	if a then return a + (b - a) * x end
+	return x
+end
+function RandomMT:NextInteger(a, b) return a + math.floor(self:_next() * (b - a + 1)) end
+function RandomMT:NextUnitVector()
+	local v = v3(self:_next() - 0.5, self:_next() - 0.5, self:_next() - 0.5)
+	return v.Unit
+end
+Random = { new = function(seed) return setmetatable({ state = math.floor(math.abs(seed or 12345)) % 2147483648 + 1 }, RandomMT) end }
 
 -- Enum: only members that really exist, so a typo fails like in Studio --
 local REAL = {
@@ -119,13 +171,18 @@ local REAL = {
 	Font = { SourceSans = true, GothamMedium = true, Gotham = true, GothamBold = true },
 	RenderPriority = { Camera = true, Character = true, First = true, Input = true, Last = true },
 }
+-- Enum items are cached so `part.Shape == Enum.PartType.Ball` compares
+-- identities like in Roblox.
+local ENUM_CACHE = {}
 Enum = setmetatable({}, { __index = function(_, group)
 	local members = REAL[group]
+	ENUM_CACHE[group] = ENUM_CACHE[group] or {}
 	return setmetatable({}, { __index = function(_, name)
 		if members and not members[name] then
 			error(string.format("Enum.%s.%s does not exist", group, name), 2)
 		end
-		return { Name = name, EnumType = group, Value = 0 }
+		ENUM_CACHE[group][name] = ENUM_CACHE[group][name] or { Name = name, EnumType = group, Value = 0 }
+		return ENUM_CACHE[group][name]
 	end })
 end })
 
@@ -137,6 +194,8 @@ local function newSignal()
 	return {
 		Connect = function(_, fn) table.insert(handlers, fn); return { Disconnect = function() end, Connected = true } end,
 		Fire = function(_, ...) for _, fn in ipairs(handlers) do fn(...) end end,
+		Wait = function() error("stub: waiting on a signal that never fires", 2) end,
+		Once = function(_, fn) table.insert(handlers, fn); return { Disconnect = function() end } end,
 	}
 end
 
@@ -145,8 +204,7 @@ TRACKS = {}
 local function newInstance(class)
 	local o = { ClassName = class, Name = class, _children = {}, _attributes = {}, _parent = nil }
 	o.Size = v3(1, 1, 1)
-	o.Position = v3(0, 0, 0)
-	o.CFrame = CFrame.new(v3(0, 0, 0))
+	o._cf = CFrame.new(v3(0, 0, 0))
 	o.Shape = Enum.PartType.Block
 	o.Transparency = 0
 	o.Anchored = false
@@ -154,13 +212,28 @@ local function newInstance(class)
 	o.AncestryChanged = newSignal()
 	o.Changed = newSignal()
 	o.Event = newSignal()
+	o.Triggered = newSignal()
+	o.Died = newSignal()
+	o.OnClientEvent = newSignal()
+	o.OnServerEvent = newSignal()
+	o.ChildAdded = newSignal()
+	o.ChildRemoved = newSignal()
+	o.AttributeChanged = newSignal()
+	o._attrSignals = {}
 	return setmetatable(o, Inst)
 end
 
 Inst.__index = function(t, k)
 	if k == "Parent" then return rawget(t, "_parent") end
+	if k == "CFrame" then return rawget(t, "_cf") end
+	if k == "Position" then return rawget(t, "_cf").Position end
 	local v = rawget(Inst, k)
 	if v then return v end
+	-- Like Roblox: an unknown key falls back to a child with that name.
+	local children = rawget(t, "_children")
+	if children then
+		for _, c in ipairs(children) do if c.Name == k then return c end end
+	end
 	return nil
 end
 Inst.__newindex = function(t, k, v)
@@ -174,6 +247,17 @@ Inst.__newindex = function(t, k, v)
 		rawset(t, "_parent", v)
 		if v then table.insert(v._children, t) end
 		t.AncestryChanged:Fire(t, v)
+		if v then v.ChildAdded:Fire(t) end
+		return
+	end
+	-- A part's CFrame and Position are one value in Roblox.
+	if k == "CFrame" then
+		rawset(t, "_cf", v)
+		return
+	end
+	if k == "Position" then
+		local old = rawget(t, "_cf")
+		rawset(t, "_cf", setmetatable({ p = v, r = old.r }, getmetatable(old)))
 		return
 	end
 	rawset(t, k, v)
@@ -181,6 +265,8 @@ end
 
 function Inst:IsA(class)
 	if self.ClassName == class then return true end
+	if class == "LuaSourceContainer" then return self.ClassName == "Script" or self.ClassName == "ModuleScript" or self.ClassName == "LocalScript" end
+	if class == "Light" then return self.ClassName == "PointLight" or self.ClassName == "SpotLight" or self.ClassName == "SurfaceLight" end
 	if class == "BasePart" then return BASE_PARTS[self.ClassName] == true end
 	if class == "Instance" then return true end
 	if class == "PVInstance" then return BASE_PARTS[self.ClassName] or self.ClassName == "Model" end
@@ -217,7 +303,29 @@ function Inst:GetFullName()
 	while node do table.insert(names, 1, node.Name); node = node._parent end
 	return table.concat(names, ".")
 end
-function Inst:SetAttribute(k, v) self._attributes[k] = v end
+function Inst:SetAttribute(k, v)
+	self._attributes[k] = v
+	self.AttributeChanged:Fire(k)
+	local sig = self._attrSignals[k]
+	if sig then sig:Fire() end
+end
+function Inst:GetAttributeChangedSignal(k)
+	self._attrSignals[k] = self._attrSignals[k] or newSignal()
+	return self._attrSignals[k]
+end
+function Inst:GetPropertyChangedSignal() return newSignal() end
+function Inst:ClearAllChildren() for _, c in ipairs(self:GetChildren()) do c:Destroy() end end
+function Inst:IsDescendantOf(ancestor)
+	local node = self._parent
+	while node do if node == ancestor then return true end node = node._parent end
+	return false
+end
+function Inst:Emit() end
+function Inst:FireClient() end
+function Inst:FireAllClients() end
+function Inst:Play() end
+function Inst:Stop() end
+function Inst:Connect() return { Disconnect = function() end } end
 function Inst:GetAttribute(k) return self._attributes[k] end
 function Inst:GetAttributes() return self._attributes end
 function Inst:Destroy()
@@ -246,17 +354,20 @@ function Inst:Clone()
 	end
 	return copy
 end
+function Inst:GetPivot()
+	local primary = rawget(self, "PrimaryPart")
+	if primary then return primary.CFrame end
+	return self.CFrame
+end
 function Inst:PivotTo(target)
-	local origin = rawget(self, "PrimaryPart") and self.PrimaryPart.Position or self.Position
+	local delta = target.Position - self:GetPivot().Position
 	for _, d in ipairs(self:GetDescendants()) do
 		if d:IsA("BasePart") then
-			d.Position = d.Position + (target.Position - origin)
-			d.CFrame = CFrame.new(d.Position)
+			d.CFrame = d.CFrame + delta
 		end
 	end
-	self.Position = target.Position
+	self.CFrame = self.CFrame + delta
 end
-function Inst:GetPivot() return CFrame.new(self.Position) end
 function Inst:SetNetworkOwner() end
 function Inst:ApplyImpulse() end
 function Inst:LoadAnimation(animation)
@@ -292,6 +403,49 @@ ServerScriptService = service("ServerScriptService", "ServerScriptService")
 local PlayersService = service("Players", "Players")
 local RunServiceStub = service("RunService", "RunService")
 local CollectionStub = service("CollectionService", "CollectionService")
+
+-- Terrain: every fill is recorded, so tests can ask what material a point
+-- ends up as (last write wins, like real voxels).
+TERRAIN_OPS = {}
+local TerrainInst = newInstance("Terrain")
+TerrainInst.Name = "Terrain"
+TerrainInst.Parent = Workspace
+rawset(Workspace, "Terrain", TerrainInst)
+function TerrainInst:Clear() TERRAIN_OPS = {} end
+function TerrainInst:FillBlock(cframe, size, material)
+	assert(size.X > 0 and size.Y > 0 and size.Z > 0, "FillBlock: empty size")
+	assert(size.X * size.Y * size.Z / 64 <= 4194304, "FillBlock: extents too large " .. tostring(size))
+	table.insert(TERRAIN_OPS, { kind = "block", cframe = cframe, half = size / 2, material = material.Name })
+end
+function TerrainInst:FillCylinder(cframe, height, radius, material)
+	table.insert(TERRAIN_OPS, { kind = "cylinder", cframe = cframe, height = height, radius = radius, material = material.Name })
+end
+function TerrainInst:FillBall(center, radius, material)
+	table.insert(TERRAIN_OPS, { kind = "ball", center = center, radius = radius, material = material.Name })
+end
+function TerrainInst:FillWedge(cframe, size, material)
+	table.insert(TERRAIN_OPS, { kind = "block", cframe = cframe, half = size / 2, material = material.Name })
+end
+function TerrainInst:SetMaterialColor() end
+local function opContains(op, p)
+	if op.kind == "ball" then return (p - op.center).Magnitude <= op.radius end
+	local l = op.cframe:PointToObjectSpace(p)
+	if op.kind == "cylinder" then
+		return math.abs(l.Y) <= op.height / 2 and math.sqrt(l.X * l.X + l.Z * l.Z) <= op.radius
+	end
+	return math.abs(l.X) <= op.half.X and math.abs(l.Y) <= op.half.Y and math.abs(l.Z) <= op.half.Z
+end
+TERRAIN_MATERIAL_AT = function(p)
+	for i = #TERRAIN_OPS, 1, -1 do
+		if opContains(TERRAIN_OPS[i], p) then return TERRAIN_OPS[i].material end
+	end
+	return "Air"
+end
+
+local LightingStub = service("Lighting", "Lighting")
+function LightingStub:GetSunDirection() return v3(0.3, 0.8, 0.5).Unit end
+local DebrisStub = service("Debris", "Debris")
+function DebrisStub:AddItem() end
 
 HEARTBEAT = {}
 RunServiceStub.Heartbeat = { Connect = function(_, fn) HEARTBEAT.fn = fn; return { Disconnect = function() end } end }
@@ -344,7 +498,22 @@ typeof = function(v)
 	return type(v)
 end
 
-task = { wait = function() end, spawn = function(fn, ...) fn(...) end, defer = function(fn, ...) fn(...) end, delay = function(_, fn, ...) fn(...) end }
+-- task: spawn/delay run the function in a coroutine; task.wait inside one
+-- parks it forever (a `while true do task.wait() ... end` loop runs one
+-- iteration instead of hanging the test), and is a no-op on the main thread.
+local function runThread(fn, ...)
+	local co = coroutine.create(fn)
+	local ok, err = coroutine.resume(co, ...)
+	if not ok then error(err, 0) end
+	return co
+end
+task = {
+	wait = function() if coroutine.isyieldable() then coroutine.yield() end return 0 end,
+	spawn = function(fn, ...) return runThread(fn, ...) end,
+	defer = function(fn, ...) return runThread(fn, ...) end,
+	delay = function(_, fn, ...) return runThread(fn, ...) end,
+	cancel = function() end,
+}
 
 WARNINGS = {}
 local realPrint = print

@@ -12,6 +12,9 @@
 --                 .Aliases, so regions tagged in Studio before the real
 --                 assets arrived keep spawning.
 --   RegionEnabled false to keep a region placed but inactive
+--   RegionWanderRadius for creatures: caps how far anything spawned here
+--                 roams from its spawn point (keeps cave dwellers in
+--                 their cave -- creatures have no obstacle avoidance)
 --
 -- Regions can live anywhere in Workspace (inside the wreck model, the cave
 -- model, a canyon...), so spawn areas move with the Blender/Studio geometry
@@ -39,16 +42,23 @@ function SpawnRegions.GetRegions(kind: string): { BasePart }
 	return regions
 end
 
+local function isBall(region: BasePart): boolean
+	return region:IsA("Part") and region.Shape == Enum.PartType.Ball
+end
+
 function SpawnRegions.RandomPointIn(region: BasePart): Vector3
 	local size = region.Size
-	if region:IsA("Part") and region.Shape == Enum.PartType.Ball then
+	if isBall(region) then
 		local radius = math.min(size.X, size.Y, size.Z) / 2
-		local direction = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5)
-		if direction.Magnitude < 0.001 then
-			direction = Vector3.new(1, 0, 0)
+		-- Rejection sampling in the unit cube: uniform inside the ball
+		-- (a normalised cube sample would favour the cube's corners).
+		for _ = 1, 32 do
+			local point = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1)
+			if point.Magnitude <= 1 then
+				return region.Position + point * radius
+			end
 		end
-		-- Cube root for uniform density inside the sphere, not clustered at the center.
-		return region.Position + direction.Unit * radius * (math.random() ^ (1 / 3))
+		return region.Position
 	end
 
 	local localPoint = Vector3.new(
@@ -60,6 +70,9 @@ function SpawnRegions.RandomPointIn(region: BasePart): Vector3
 end
 
 function SpawnRegions.Contains(region: BasePart, position: Vector3): boolean
+	if isBall(region) then
+		return (position - region.Position).Magnitude <= math.min(region.Size.X, region.Size.Y, region.Size.Z) / 2
+	end
 	local localPoint = region.CFrame:PointToObjectSpace(position)
 	local half = region.Size / 2
 	return math.abs(localPoint.X) <= half.X and math.abs(localPoint.Y) <= half.Y and math.abs(localPoint.Z) <= half.Z
@@ -74,6 +87,16 @@ function SpawnRegions.GetSpeciesList(region: BasePart): { string }
 		end
 	end
 	return list
+end
+
+-- Waits (yielding) until WorldBootstrap has built the world, so a spawner
+-- sees every generated region before deciding where open-water fallback
+-- placement is still needed.
+function SpawnRegions.WaitForWorld()
+	local Workspace = game:GetService("Workspace")
+	if not Workspace:GetAttribute("WorldReady") then
+		Workspace:GetAttributeChangedSignal("WorldReady"):Wait()
+	end
 end
 
 -- Fires for regions added after startup (e.g. content streamed or spawned
