@@ -94,6 +94,7 @@ CF.__index = function(t, k)
 end
 CFrame = {
 	new = function(a, b, c)
+		if a == nil then return cf(v3(0, 0, 0), IDENT) end
 		if type(a) == "number" then return cf(v3(a, b, c), IDENT) end
 		return cf(a, IDENT)
 	end,

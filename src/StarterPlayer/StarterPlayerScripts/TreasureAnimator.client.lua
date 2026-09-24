@@ -1,6 +1,6 @@
--- Purely cosmetic: spins and gently bobs any treasure part flagged with the
--- Animate attribute, so they read as objects floating in the current
--- instead of static markers.
+-- Purely cosmetic: spins and gently bobs any treasure (a model from
+-- TreasureModels, or a plain part) flagged with the Animate attribute, so
+-- they read as objects floating in the current instead of static markers.
 --
 -- Only treasures within ANIMATE_RADIUS of the local camera are moved, and
 -- the candidate list is refreshed on a slow timer rather than scanning the
@@ -18,7 +18,7 @@ local BOB_SPEED = 2
 local ANIMATE_RADIUS = 250
 local REFRESH_INTERVAL = 1
 
-local baseHeights = setmetatable({}, { __mode = "k" })
+local rests = setmetatable({}, { __mode = "k" }) -- rest pivot per treasure
 local nearby = {}
 local sinceRefresh = REFRESH_INTERVAL
 
@@ -32,8 +32,8 @@ local function refreshNearby()
 
 	local origin = camera.CFrame.Position
 	for _, treasure in ipairs(treasuresFolder:GetChildren()) do
-		if treasure:IsA("BasePart") and treasure:GetAttribute("Animate") then
-			if (treasure.Position - origin).Magnitude <= ANIMATE_RADIUS then
+		if (treasure:IsA("BasePart") or treasure:IsA("Model")) and treasure:GetAttribute("Animate") then
+			if (treasure:GetPivot().Position - origin).Magnitude <= ANIMATE_RADIUS then
 				table.insert(nearby, treasure)
 			end
 		end
@@ -50,15 +50,20 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	local now = os.clock()
 	for _, treasure in ipairs(nearby) do
 		if treasure.Parent then
-			local baseHeight = baseHeights[treasure]
-			if not baseHeight then
-				baseHeight = treasure.Position.Y
-				baseHeights[treasure] = baseHeight
+			local rest = rests[treasure]
+			if not rest then
+				rest = treasure:GetPivot()
+				rests[treasure] = rest
 			end
-
-			local bobOffset = math.sin(now * BOB_SPEED + treasure.Position.X) * BOB_HEIGHT
-			local newPosition = Vector3.new(treasure.Position.X, baseHeight + bobOffset, treasure.Position.Z)
-			treasure.CFrame = CFrame.new(newPosition) * CFrame.Angles(0, now * ROTATION_SPEED, 0)
+			local phase = rest.Position.X * 0.37 + rest.Position.Z * 0.21
+			local bob = math.sin(now * BOB_SPEED + phase) * BOB_HEIGHT
+			-- A slow turn plus a slight rocking, like something drifting.
+			local pose = rest * CFrame.new(0, bob, 0) * CFrame.Angles(math.sin(now * 1.3 + phase) * 0.08, now * ROTATION_SPEED, 0)
+			if treasure:IsA("Model") then
+				treasure:PivotTo(pose)
+			else
+				treasure.CFrame = pose
+			end
 		end
 	end
 end)

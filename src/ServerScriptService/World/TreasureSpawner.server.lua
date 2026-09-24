@@ -23,6 +23,7 @@ local TreasureConfig = require(ReplicatedStorage.Shared.Config.TreasureConfig)
 local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 local SpawnRegions = require(ReplicatedStorage.Shared.Modules.SpawnRegions)
+local TreasureModels = require(ReplicatedStorage.Shared.Modules.TreasureModels)
 local WorldLayout = require(script.Parent.Builders.WorldLayout)
 local PlayerInventory = require(ServerScriptService.Player.PlayerInventory)
 
@@ -38,14 +39,6 @@ local RESPAWN_MIN, RESPAWN_MAX = 90, 150
 local MIN_RADIUS = 200
 local MAX_RADIUS = 880
 local PLACEMENT_ATTEMPTS = 40
-
-local RARITY_COLORS = {
-	Commune = Color3.fromRGB(200, 200, 200),
-	["Peu commune"] = Color3.fromRGB(90, 200, 120),
-	Rare = Color3.fromRGB(80, 140, 230),
-	["Très rare"] = Color3.fromRGB(180, 90, 220),
-	["Légendaire"] = Color3.fromRGB(240, 180, 40),
-}
 
 local rng = Random.new()
 
@@ -77,87 +70,42 @@ local treasureFolder = Instance.new("Folder")
 treasureFolder.Name = "Treasures"
 treasureFolder.Parent = Workspace
 
--- Distinct shape/material per treasure type, so they read as objects.
--- TreasureAnimator (client) spins/bobs anything with the Animate attribute.
-local function buildTreasureModel(treasureType)
-	local part = Instance.new("Part")
-	part.Name = treasureType.Id
-	part.Anchored = true
-	part.CanCollide = false
-	part.CastShadow = false
-
-	if treasureType.Id == "Coin" then
-		part.Shape = Enum.PartType.Cylinder
-		part.Size = Vector3.new(0.3, 1.4, 1.4)
-		part.Material = Enum.Material.Metal
-		part.Color = Color3.fromRGB(230, 190, 60)
-	elseif treasureType.Id == "Jewel" then
-		part.Shape = Enum.PartType.Ball
-		part.Size = Vector3.new(1.4, 1.4, 1.4)
-		part.Material = Enum.Material.Glass
-		part.Color = RARITY_COLORS[treasureType.Rarity]
-	elseif treasureType.Id == "Chest" then
-		part.Size = Vector3.new(2.2, 1.6, 1.6)
-		part.Material = Enum.Material.WoodPlanks
-		part.Color = Color3.fromRGB(110, 75, 45)
-	elseif treasureType.Id == "Artifact" then
-		part.Size = Vector3.new(1.6, 1.8, 1.4)
-		part.Material = Enum.Material.Slate
-		part.Color = Color3.fromRGB(140, 135, 120)
-	else -- Relic
-		part.Shape = Enum.PartType.Ball
-		part.Size = Vector3.new(1.8, 1.8, 1.8)
-		part.Material = Enum.Material.Neon
-		part.Color = RARITY_COLORS[treasureType.Rarity]
-	end
-
-	-- A faint glow so loot can be spotted in the dark zones, stronger for
-	-- rarer finds.
-	if treasureType.Id ~= "Coin" then
-		local light = Instance.new("PointLight")
-		light.Color = RARITY_COLORS[treasureType.Rarity]
-		light.Range = treasureType.Id == "Relic" and 12 or 7
-		light.Brightness = treasureType.Id == "Relic" and 2 or 0.8
-		light.Parent = part
-	end
-
-	return part
-end
-
 local spawnInSlot -- forward declaration (a slot refills itself)
 
 local function spawnTreasure(slot, position: Vector3)
 	local zoneIndex = DepthUtils.GetZoneIndexForDepth(DepthUtils.GetDepth(position))
 	local treasureType = pickWeightedTreasureType(zoneIndex)
 
-	local part = buildTreasureModel(treasureType)
-	part.Position = position
-	part:SetAttribute("TreasureId", treasureType.Id)
-	part:SetAttribute("Value", treasureType.Value)
-	part:SetAttribute("Rarity", treasureType.Rarity)
-	part:SetAttribute("Animate", true)
+	-- A detailed little model per type (TreasureModels), turned to a random
+	-- heading; TreasureAnimator (client) spins/bobs anything with Animate.
+	local model = TreasureModels.Build(treasureType)
+	model:PivotTo(CFrame.new(position) * CFrame.Angles(0, rng:NextNumber() * math.pi * 2, 0))
+	model:SetAttribute("TreasureId", treasureType.Id)
+	model:SetAttribute("Value", treasureType.Value)
+	model:SetAttribute("Rarity", treasureType.Rarity)
+	model:SetAttribute("Animate", true)
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Ramasser"
 	prompt.ObjectText = string.format("%s (%d)", treasureType.Name, treasureType.Value)
 	prompt.HoldDuration = 0.5
-	prompt.MaxActivationDistance = 8
+	prompt.MaxActivationDistance = 9
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = part
+	prompt.Parent = model.PrimaryPart
 
 	prompt.Triggered:Connect(function(player)
-		if not part.Parent then
+		if not model.Parent then
 			return
 		end
-		part.Parent = nil
+		model.Parent = nil
 		local data = { Id = treasureType.Id, Name = treasureType.Name, Value = treasureType.Value, Rarity = treasureType.Rarity }
 		PlayerInventory.AddCarried(player, data)
 		treasureCollected:Fire(player, data)
-		part:Destroy()
+		model:Destroy()
 		task.delay(rng:NextNumber(RESPAWN_MIN, RESPAWN_MAX), spawnInSlot, slot)
 	end)
 
-	part.Parent = treasureFolder
+	model.Parent = treasureFolder
 end
 
 -- Open water inside a zone's depth band, clear of everything the world

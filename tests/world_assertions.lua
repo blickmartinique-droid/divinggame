@@ -328,17 +328,33 @@ local treasures = Workspace:FindFirstChild("Treasures"):GetChildren()
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 local perZone, buried = {}, 0
 for _, t in ipairs(treasures) do
-	local zone = DepthUtils.GetZoneIndexForDepth(DepthUtils.GetDepth(t.Position))
+	local position = t:GetPivot().Position
+	local zone = DepthUtils.GetZoneIndexForDepth(DepthUtils.GetDepth(position))
 	perZone[zone] = (perZone[zone] or 0) + 1
-	if not isWater(t.Position) then
+	if not isWater(position) then
 		buried += 1
-		print("  buried treasure", t.Position, TERRAIN_MATERIAL_AT(t.Position))
+		print("  buried treasure", position, TERRAIN_MATERIAL_AT(position))
 	end
 end
 for zone = 1, 4 do
 	check("zone " .. zone .. " has at least 15 treasures", (perZone[zone] or 0) >= 15, perZone[zone])
 end
 check("no treasure buried in terrain", buried == 0, buried)
+local TreasureConfig = require(ReplicatedStorage.Shared.Config.TreasureConfig)
+local TreasureModels = require(ReplicatedStorage.Shared.Modules.TreasureModels)
+local modelled, detailed = 0, 0
+for _, kind in ipairs(TreasureConfig.Types) do
+	if TreasureModels.Has(kind.Id) then modelled += 1 end
+	local model = TreasureModels.Build(kind)
+	if #model:GetChildren() >= 5 and model.PrimaryPart then detailed += 1 end
+end
+check("every treasure type has its own model", modelled == #TreasureConfig.Types, modelled .. "/" .. #TreasureConfig.Types)
+check("treasure models are detailed (5+ parts)", detailed == #TreasureConfig.Types, detailed)
+local prompted = 0
+for _, t in ipairs(treasures) do
+	if t:IsA("Model") and t.PrimaryPart and t.PrimaryPart:FindFirstChildOfClass("ProximityPrompt") then prompted += 1 end
+end
+check("every spawned treasure is a model with a pickup prompt", prompted == #treasures, prompted .. "/" .. #treasures)
 
 WARNINGS = {}
 RUN_SCRIPT("ServerScriptService", "Creatures", "CreatureSpawner")
