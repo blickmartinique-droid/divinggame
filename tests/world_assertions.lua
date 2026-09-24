@@ -86,6 +86,11 @@ if caves then
 		check("entrance " .. entrance.id .. ": mouth is outside the rock", entrance.mouth.Y > g - 2 or isWater(entrance.mouth - entrance.inward * 20), g)
 		-- The sign/ring sit on the face itself, not floating in front of it.
 		check("entrance " .. entrance.id .. ": marked at the rock face", g > entrance.mouth.Y and g < entrance.mouth.Y + 40, g - entrance.mouth.Y)
+		local clutter = 0
+		for _, part in ipairs(Workspace.WorldDecor:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name:sub(1, 9) ~= "Creatures" and (part.Position - entrance.mouth).Magnitude < entrance.clearRadius then clutter += 1 end
+		end
+		check("entrance " .. entrance.id .. ": no decor in the mouth", clutter == 0, clutter)
 		-- Visible from above: the face over a sideways mouth is cut open.
 		if entrance.inward.Y > -0.6 then
 			local open = 0

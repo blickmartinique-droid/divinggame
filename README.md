@@ -148,7 +148,10 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   **Fenêtre** ; → **Grotte aux Méduses** (~312 m, bassin bioluminescent) →
   **Sortie des Abysses**. Tunnels sinueux (splines), salles organiques à sol
   de sable, stalactites, champignons et vers luisants posés sur les surfaces
-  calculées. Un courant aspire vers le Porche.
+  calculées. Un courant aspire vers le Porche. Tout est creusé en `Air`
+  puis rempli d'eau : avec les *Shorelines* (défaut Roblox), un simple
+  remplissage `Water` laisse la roche en place. Aucun décor ne se pose
+  dans une bouche de grotte.
 - **Biomes** — `Builders/BiomeDecor.lua` : récif du lagon (coraux branchus,
   cerveaux, tables, éventails, éponges, anémones, oursins, étoiles de mer,
   bénitiers, herbiers, kelp), gorgones et éponges sur le tombant, **forêt de
@@ -250,13 +253,15 @@ sans réécriture, mais ces paliers ne sont **pas** développés en V1.
 Il n'y a pas de runtime Roblox hors de Studio, donc `tests/` monte **tous**
 les scripts du jeu, là où Rojo les placerait, au-dessus d'un faux minimal et
 strict de l'API Roblox (`tests/stub.lua` — un `Enum` inexistant lève une
-erreur comme dans Studio, le Terrain enregistre chaque remplissage) et les
+erreur comme dans Studio, le Terrain enregistre chaque remplissage et suit
+la règle des *Shorelines* de Roblox : de l'eau versée dans de la roche ne la
+retire pas, seul un remplissage `Air` creuse) et les
 **exécute** avec le CLI `luau` :
 
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 91 vérifications
+luau tests/world_test.lua      # 95 vérifications
 luau tests/ui_test.lua         # 31 vérifications
 ```
 

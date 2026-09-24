@@ -406,6 +406,24 @@ function BiomeDecor.Build(layout)
 		creatureRegion("Creatures_AbyssPlain" .. k, Vector3.new(x, -440, z), Vector3.new(160, 30, 160), "MeduseLumineuse", 5)
 	end
 
+	-- Keep the cave mouths clear: decor is planted on the heightfield, which
+	-- knows nothing of the holes, so anything that landed in (or over) a
+	-- porch or its cleft would float there and hide the way in.
+	local caves = layout:GetAnchor("Caves")
+	if caves then
+		for _, part in ipairs(decor:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name:sub(1, 9) ~= "Creatures" then
+				for _, entrance in ipairs(caves.entrances) do
+					if (part.Position - entrance.mouth).Magnitude < entrance.clearRadius then
+						part:Destroy()
+						count -= 1
+						break
+					end
+				end
+			end
+		end
+	end
+
 	print(string.format("[BiomeDecor] %d decor parts", count))
 end
 

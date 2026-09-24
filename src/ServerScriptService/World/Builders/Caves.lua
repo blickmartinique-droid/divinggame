@@ -134,6 +134,13 @@ end
 
 function Caves.Build(layout)
 	local terrain = Workspace.Terrain
+	-- Carving must clear with Air first: with Shorelines (the Roblox default)
+	-- a voxel keeps its rock when water is filled into it -- a Water fill
+	-- alone only wets the rock and leaves no hole at all.
+	local function carve(center: Vector3, radius: number)
+		terrain:FillBall(center, radius, Enum.Material.Air)
+		terrain:FillBall(center, radius, Enum.Material.Water)
+	end
 	local spur = layout:GetAnchor("CaveSpur")
 	assert(spur, "Caves needs the Seabed's spur")
 	local rng = layout:Random("Caves")
@@ -180,7 +187,7 @@ function Caves.Build(layout)
 			table.insert(balls, { center = center + offset - Vector3.new(0, r * (0.1 + rng:NextNumber() * 0.15), 0), radius = r * (0.55 + rng:NextNumber() * 0.15) })
 		end
 		for _, ball in ipairs(balls) do
-			terrain:FillBall(ball.center, ball.radius, Enum.Material.Water)
+			carve(ball.center, ball.radius)
 		end
 		local floorY = center.Y - r * 0.55
 		terrain:FillCylinder(CFrame.new(center.X, floorY - 7, center.Z), 14, r * 1.05, Enum.Material.Sand)
@@ -203,7 +210,7 @@ function Caves.Build(layout)
 		for index, sample in ipairs(samples) do
 			local radius = spec.radius * (1 + 0.18 * noise:Get(index * 0.21, #spec.id))
 			radii[index] = radius
-			terrain:FillBall(sample, radius, Enum.Material.Water)
+			carve(sample, radius)
 		end
 		tunnels[spec.id] = { spec = spec, points = points, samples = samples, radii = radii }
 	end
@@ -234,14 +241,14 @@ function Caves.Build(layout)
 		local inward = (ahead - rim).Unit
 		-- The porch: a funnel of big bubbles narrowing into the tube.
 		for k, factor in ipairs({ 1.9, 1.7, 1.45, 1.25, 1.1 }) do
-			terrain:FillBall(rim + inward * ((k - 2) * 5), radius * factor, Enum.Material.Water)
+			carve(rim + inward * ((k - 2) * 5), radius * factor)
 		end
 		-- The cleft up the face (not on a vertical shaft, already open above).
 		if inward.Y > -0.6 then
 			local flat = Vector3.new(inward.X, 0, inward.Z).Unit
 			for k = 1, 14 do
 				local center = rim + flat * (k * 2.5) + Vector3.new(0, k * 5, 0)
-				terrain:FillBall(center, radius * (0.95 - k * 0.03), Enum.Material.Water)
+				carve(center, radius * (0.95 - k * 0.03))
 				if center.Y > layout:GroundHeight(center.X, center.Z) + radius * 0.5 then
 					break
 				end
@@ -289,7 +296,7 @@ function Caves.Build(layout)
 	end
 	local shaftTop = cathedral.center + Vector3.new(0, 95, 0)
 	for y = cathedral.center.Y + cathedral.radius * 0.6, shaftTop.Y, 3 do
-		terrain:FillBall(Vector3.new(cathedral.center.X, y, cathedral.center.Z), 8 + 1.5 * noise:Get(y * 0.1, 4.2), Enum.Material.Water)
+		carve(Vector3.new(cathedral.center.X, y, cathedral.center.Z), 8 + 1.5 * noise:Get(y * 0.1, 4.2))
 	end
 	-- The daylight itself: a faint vertical glow column (a Cylinder's axis
 	-- is its X, turned upright) with a spotlight shining down from its top.
@@ -485,7 +492,10 @@ function Caves.Build(layout)
 		label.Text = "⛰ " .. entrance.name
 		label.Parent = sign
 		sign.Parent = marker
-		table.insert(entrances, { id = entrance.id, name = entrance.name, mouth = mouth, inward = inward })
+		-- Kept free of decor and runtime placements (treasures, etc.).
+		local clearRadius = tunnel.spec.radius * 2.6
+		layout:ReserveSphere("CaveMouth_" .. entrance.id, mouth, clearRadius)
+		table.insert(entrances, { id = entrance.id, name = entrance.name, mouth = mouth, inward = inward, clearRadius = clearRadius })
 	end
 
 	-- 9. Gameplay: loot in every chamber, life where it belongs. Cave

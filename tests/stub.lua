@@ -424,7 +424,7 @@ local RunServiceStub = service("RunService", "RunService")
 local CollectionStub = service("CollectionService", "CollectionService")
 
 -- Terrain: every fill is recorded, so tests can ask what material a point
--- ends up as (last write wins, like real voxels).
+-- ends up as (see TERRAIN_MATERIAL_AT for the water rule).
 TERRAIN_OPS = {}
 -- Ops are also filed into 32-stud XZ cells so a point query only scans the
 -- ops that can touch it (the seabed alone is ~90k column fills).
@@ -489,14 +489,28 @@ local function opContains(op, p)
 	end
 	return math.abs(l.X) <= op.half.X and math.abs(l.Y) <= op.half.Y and math.abs(l.Z) <= op.half.Z
 end
+-- Shorelines semantics (the Roblox default): a voxel holds a solid AND a
+-- liquid part, so filling Water over rock only wets it -- the rock stays.
+-- Only a fill with Air clears a voxel (solid and water alike). Water
+-- therefore wins only over what was empty.
 TERRAIN_MATERIAL_AT = function(p)
 	local list = terrainCells[cellKey(math.floor(p.X / CELL), math.floor(p.Z / CELL))]
+	local wet = false
 	if list then
 		for i = #list, 1, -1 do
-			if opContains(list[i], p) then return list[i].material end
+			local op = list[i]
+			if opContains(op, p) then
+				if op.material == "Water" then
+					wet = true
+				elseif op.material == "Air" then
+					return wet and "Water" or "Air"
+				else
+					return op.material
+				end
+			end
 		end
 	end
-	return "Air"
+	return wet and "Water" or "Air"
 end
 -- Anything that is neither water nor empty.
 TERRAIN_SOLID_AT = function(p)
