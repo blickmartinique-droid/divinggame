@@ -42,6 +42,8 @@ local YIELD_EVERY = 2500
 Seabed.WRECK_BEARING = 35
 Seabed.WRECK_DISTANCE = 400
 Seabed.WRECK_DEPTH = -330
+Seabed.WRECK_HALF_ARC = 340 -- along the contour
+Seabed.WRECK_HALF_WIDTH = 145 -- across it
 Seabed.SPUR_BEARING = 155
 Seabed.RIFT_BEARING = 300
 Seabed.RIFT_DISTANCE = 720
@@ -82,7 +84,7 @@ function Seabed.CreateHeightFunction(seed: number)
 	local noise = Noise.new(seed)
 	local detail = Noise.new(seed + 17)
 	local wreckX, wreckZ = bearingVector(Seabed.WRECK_BEARING)
-	wreckX, wreckZ = wreckX * Seabed.WRECK_DISTANCE, wreckZ * Seabed.WRECK_DISTANCE
+	local wreckAngle = math.atan2(wreckZ, wreckX)
 	local spurX, spurZ = bearingVector(Seabed.SPUR_BEARING)
 	local riftDirX, riftDirZ = bearingVector(Seabed.RIFT_BEARING)
 	local riftX, riftZ = riftDirX * Seabed.RIFT_DISTANCE, riftDirZ * Seabed.RIFT_DISTANCE
@@ -115,16 +117,19 @@ function Seabed.CreateHeightFunction(seed: number)
 			h = math.max(h, spur + detail:Fbm(x / 30, z / 30, 3) * 5)
 		end
 
-		-- Wreck terrace: a flat, sandy ledge cut into the NE flank.
-		local dx, dz = x - wreckX, z - wreckZ
-		local radial = (dx * wreckX + dz * wreckZ) / Seabed.WRECK_DISTANCE
-		local tangent = (dx * -wreckZ + dz * wreckX) / Seabed.WRECK_DISTANCE
-		local ellipse = math.sqrt((tangent / 265) ^ 2 + (radial / 145) ^ 2)
+		-- Wreck terrace: a long sandy ledge curving along the NE flank at a
+		-- constant distance from the summit (it follows the contour, so it
+		-- stays a shelf all along instead of a table sticking out of the
+		-- slope). Room for the Sirène Noire and the graveyard around her.
+		local arc = ((theta - wreckAngle + math.pi) % (2 * math.pi)) - math.pi
+		local tangent = arc * Seabed.WRECK_DISTANCE
+		local radial = r - Seabed.WRECK_DISTANCE
+		local ellipse = math.sqrt((tangent / Seabed.WRECK_HALF_ARC) ^ 2 + (radial / Seabed.WRECK_HALF_WIDTH) ^ 2)
 		-- A wide blend band so the ledge eases into the slope below it (a
 		-- narrow one left a flat table standing on a cliff).
-		if ellipse < 1.8 then
+		if ellipse < 1.7 then
 			local shelf = Seabed.WRECK_DEPTH + detail:Fbm(x / 40, z / 40, 2) * 1.5
-			h += (shelf - h) * smoothstep(1.8, 0.85, ellipse)
+			h += (shelf - h) * smoothstep(1.7, 0.85, ellipse)
 		end
 
 		-- Abyssal rift: twin basalt ridges with a canyon between them.
@@ -270,6 +275,11 @@ function Seabed.Build(layout)
 		-- Lengthwise along the terrace (tangent to the slope).
 		lengthAxis = Vector3.new(-wz, 0, wx),
 		outward = Vector3.new(wx, 0, wz),
+		-- The ledge: an arc of this radius around the summit.
+		distance = Seabed.WRECK_DISTANCE,
+		angle = math.atan2(wz, wx),
+		halfArc = Seabed.WRECK_HALF_ARC,
+		halfWidth = Seabed.WRECK_HALF_WIDTH,
 	})
 	local sx, sz = bearingVector(Seabed.SPUR_BEARING)
 	layout:SetAnchor("CaveSpur", { along = Vector3.new(sx, 0, sz), across = Vector3.new(-sz, 0, sx) })

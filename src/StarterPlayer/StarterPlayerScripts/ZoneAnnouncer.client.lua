@@ -33,11 +33,14 @@ local BANNER_OUT = 0.6
 local DEPTH_APPLY_EPSILON = 0.05
 
 -- Banner ------------------------------------------------------------------
--- A glass card that drops in under the top edge: a small "ZONE n · depth
--- range" eyebrow, the zone name in large letters, and an accent line in
--- the zone's colour that draws itself from the centre outward.
+-- A glass card that drops in under the top edge: a small eyebrow line, the
+-- place's name in large letters, a one-line description, and an accent
+-- line in its colour that draws itself from the centre outward. Shown when
+-- the diver enters a new depth zone ("ZONE 3 · 250 – 400 m / ÉPAVE") or a
+-- new biome ("ÉPAVE · 332 m / CIMETIÈRE DE LA SIRÈNE / ...").
 
 local UITheme = require(ReplicatedStorage.Shared.Modules.UITheme)
+local BiomeLookup = require(ReplicatedStorage.Shared.Modules.BiomeLookup)
 local C, F = UITheme.Colors, UITheme.Fonts
 
 local screenGui = Instance.new("ScreenGui")
@@ -48,20 +51,24 @@ screenGui.DisplayOrder = 5
 screenGui.Parent = player:WaitForChild("PlayerGui")
 UITheme.AutoScale(screenGui)
 
-local HIDDEN_Y = UDim2.new(0.5, 0, 0, -120)
+local HIDDEN_Y = UDim2.new(0.5, 0, 0, -140)
 local SHOWN_Y = UDim2.new(0.5, 0, 0, 96)
 
-local card = UITheme.Panel(screenGui, "ZoneCard", UDim2.fromOffset(380, 92), HIDDEN_Y, Vector2.new(0.5, 0))
+local card = UITheme.Panel(screenGui, "ZoneCard", UDim2.fromOffset(440, 112), HIDDEN_Y, Vector2.new(0.5, 0))
 card.Visible = false
 local cardStroke = card:FindFirstChildOfClass("UIStroke") :: UIStroke
 
 local eyebrow = UITheme.Label(card, "Eyebrow", "", F.Bold, 12, C.TextDim)
 eyebrow.TextXAlignment = Enum.TextXAlignment.Center
-eyebrow.Position = UDim2.fromOffset(0, 14)
+eyebrow.Position = UDim2.fromOffset(0, 12)
 
-local title = UITheme.Label(card, "Title", "", F.Title, 34, C.Text)
+local title = UITheme.Label(card, "Title", "", F.Title, 30, C.Text)
 title.TextXAlignment = Enum.TextXAlignment.Center
-title.Position = UDim2.fromOffset(0, 32)
+title.Position = UDim2.fromOffset(0, 30)
+
+local description = UITheme.Label(card, "Description", "", F.Medium, 13, C.TextDim)
+description.TextXAlignment = Enum.TextXAlignment.Center
+description.Position = UDim2.fromOffset(0, 68)
 
 local accent = Instance.new("Frame")
 accent.Name = "Accent"
@@ -78,13 +85,13 @@ end
 
 local bannerToken = 0
 
-local function announceZone(zone, index: number)
+local function showCard(eyebrowText: string, titleText: string, descriptionText: string, color: Color3)
 	bannerToken += 1
 	local token = bannerToken
-	local color = zoneAccent(zone)
 
-	eyebrow.Text = string.format("ZONE %d  ·  %d – %d m", index, zone.MinDepth, zone.MaxDepth)
-	title.Text = zone.Name:upper()
+	eyebrow.Text = eyebrowText
+	title.Text = UITheme.Upper(titleText)
+	description.Text = descriptionText
 	accent.BackgroundColor3 = color
 	accent.Size = UDim2.fromOffset(0, 3)
 	cardStroke.Color = color
@@ -93,7 +100,7 @@ local function announceZone(zone, index: number)
 
 	TweenService:Create(card, TweenInfo.new(BANNER_IN, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = SHOWN_Y }):Play()
 	TweenService:Create(accent, TweenInfo.new(BANNER_IN + 0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Size = UDim2.fromOffset(220, 3),
+		Size = UDim2.fromOffset(240, 3),
 	}):Play()
 
 	task.delay(BANNER_IN + BANNER_HOLD, function()
@@ -108,6 +115,15 @@ local function announceZone(zone, index: number)
 			end
 		end)
 	end)
+end
+
+local function announceZone(zone, index: number)
+	showCard(string.format("ZONE %d  ·  %d – %d m", index, zone.MinDepth, zone.MaxDepth), zone.Name, "", zoneAccent(zone))
+end
+
+local function announceBiome(biome, depth: number)
+	local zone = DepthUtils.GetZoneForDepth(depth)
+	showCard(string.format("%s  ·  %d m", UITheme.Upper(zone.Name), math.floor(depth + 0.5)), biome.DisplayName, biome.Description or "", biome.Color or C.Oxygen)
 end
 
 -- Effects -------------------------------------------------------------------
@@ -202,7 +218,18 @@ end
 local currentZoneName = nil
 local lastAppliedDepth = nil
 
-RunService.Heartbeat:Connect(function()
+-- Biomes: announced once the diver has stayed in one for a moment (no
+-- flicker along a border), and not again for a while after leaving it.
+local BIOME_SETTLE = 0.6
+local BIOME_REPEAT = 25
+local currentBiome = nil
+local candidateBiome, candidateSince = nil, 0
+local lastAnnounced = {}
+local biomeCheckAt = 0
+local clock = 0 -- seconds of play, from Heartbeat
+
+RunService.Heartbeat:Connect(function(dt)
+	clock += dt
 	local camera = Workspace.CurrentCamera
 	if camera then
 		local cameraDepth = DepthUtils.GetDepth(camera.CFrame.Position)
@@ -226,5 +253,23 @@ RunService.Heartbeat:Connect(function()
 		end
 	else
 		currentZoneName = nil
+	end
+
+	local now = clock
+	if now < biomeCheckAt then
+		return
+	end
+	biomeCheckAt = now + 0.25
+	local biome = depth > 0 and BiomeLookup.Find(rootPart.Position) or nil
+	local name = biome and biome.DisplayName
+	if name ~= candidateBiome then
+		candidateBiome, candidateSince = name, now
+	end
+	if name ~= currentBiome and now - candidateSince >= BIOME_SETTLE then
+		currentBiome = name
+		if biome and now - (lastAnnounced[name] or -math.huge) > BIOME_REPEAT then
+			lastAnnounced[name] = now
+			announceBiome(biome, depth)
+		end
 	end
 end)

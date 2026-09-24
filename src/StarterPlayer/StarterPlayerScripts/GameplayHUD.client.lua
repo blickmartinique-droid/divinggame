@@ -20,6 +20,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UITheme = require(ReplicatedStorage.Shared.Modules.UITheme)
 local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
+local BiomeLookup = require(ReplicatedStorage.Shared.Modules.BiomeLookup)
 local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local player = Players.LocalPlayer
@@ -250,7 +251,7 @@ currentLabel.Size = UDim2.fromScale(1, 1)
 currentLabel.TextXAlignment = Enum.TextXAlignment.Center
 local function showCurrent(current: Instance)
 	local tier = TIER[current:GetAttribute("CurrentTier")] or TIER.Medium
-	currentLabel.Text = string.format("≈  %s  ·  %s", tostring(current:GetAttribute("CurrentDisplayName") or current.Name), tier[1]:upper())
+	currentLabel.Text = string.format("≈  %s  ·  %s", tostring(current:GetAttribute("CurrentDisplayName") or current.Name), UITheme.Upper(tier[1]))
 	currentLabel.TextColor3 = tier[2]
 	tween(currentChip, 0.35, { Position = UDim2.new(0.5, 0, 0, 22) })
 end
@@ -309,7 +310,27 @@ end)
 
 -- Per frame: glide the gauge/bar/counters toward their values; pulse the
 -- low-oxygen warning.
+-- The name under the depth: the biome the diver is in (a few times a
+-- second is plenty), else the depth zone.
+local placeName, placeTimer = "SURFACE", 0
+local function refreshPlace()
+	local depth = depthValue.Value
+	if depth <= 0 then
+		placeName = "SURFACE"
+		return
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local biome = root and BiomeLookup.Find(root.Position)
+	placeName = UITheme.Upper(biome and biome.DisplayName or DepthUtils.GetZoneForDepth(depth).Name)
+end
+
 RunService.RenderStepped:Connect(function(dt)
+	placeTimer -= dt
+	if placeTimer <= 0 then
+		placeTimer = 0.25
+		refreshPlace()
+	end
 	local alpha = 1 - math.exp(-dt * 10)
 
 	shownDepth += (depthValue.Value - shownDepth) * alpha
@@ -318,7 +339,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local absolute = track.AbsolutePosition.Y + track.AbsoluteSize.Y * fraction
 	readout.Position = UDim2.fromOffset(gauge.AbsolutePosition.X + gauge.AbsoluteSize.X + 10, absolute + screenGui.AbsolutePosition.Y)
 	depthText.Text = string.format("%d m", math.floor(shownDepth + 0.5))
-	zoneText.Text = depthValue.Value > 0 and DepthUtils.GetZoneForDepth(depthValue.Value).Name:upper() or "SURFACE"
+	zoneText.Text = placeName
 
 	local maxOxygen = maxOxygenValue.Value > 0 and maxOxygenValue.Value or 1
 	local oxygenFraction = math.clamp(oxygenValue.Value / maxOxygen, 0, 1)

@@ -151,6 +151,68 @@ if ship and shipCFrame then
 	check("vortex off the wreck in open water", vortex and isWater(vortex.Position) and layout:GroundHeight(vortex.Position.X, vortex.Position.Z) < vortex.Position.Y - 15)
 end
 
+section("Graveyard")
+local graveyard = layout:GetAnchor("Graveyard")
+check("graveyard built", graveyard ~= nil)
+if graveyard then
+	local root = Workspace.World.Underwater.WreckZone.Graveyard
+	local brigPlanks = 0
+	for _, p in ipairs(root.Wrecks.BrickChavire:GetChildren()) do
+		if p.Name == "Plank" then brigPlanks += 1 end
+	end
+	check("capsized brig is planked", brigPlanks > 150, brigPlanks)
+	-- Upside down: her keel is the top of the wreck, well above the sand.
+	local keel = root.Wrecks.BrickChavire:FindFirstChild("Keel")
+	local g = layout:GroundHeight(keel.Position.X, keel.Position.Z)
+	check("brig keel up, above the sand", keel.Position.Y > g + 18, keel.Position.Y - g)
+	check("brig's torn bottom opens into water", isWater(graveyard.brigHole + Vector3.new(0, 2, 0)))
+	for _, wreck in ipairs({ "ChaloupeBrisee", "Squelette" }) do
+		local resting, total = 0, 0
+		for _, p in ipairs(root.Wrecks[wreck]:GetChildren()) do
+			if p.Name == "Keel" then
+				total += 1
+				local h = layout:GroundHeight(p.Position.X, p.Position.Z)
+				if p.Position.Y > h - 7 and p.Position.Y < h + 8 then resting += 1 end
+			end
+		end
+		check(wreck .. ": keel rests on the ledge", total > 0 and resting == total, resting .. "/" .. total)
+	end
+	-- No wreck overlaps the Sirène Noire.
+	local ship
+	for _, volume in ipairs(layout.reserved) do if volume.name == "Shipwreck" then ship = volume end end
+	local overlaps = 0
+	for _, box in ipairs(graveyard.reserved) do
+		for x = -1, 1, 0.5 do for y = -1, 1, 0.5 do for z = -1, 1, 0.5 do
+			local l = ship.cframe:PointToObjectSpace(box.cframe * (box.size / 2 * Vector3.new(x, y, z)))
+			if math.abs(l.X) < ship.half.X and math.abs(l.Y) < ship.half.Y and math.abs(l.Z) < ship.half.Z then overlaps += 1 end
+		end end end
+	end
+	check("graveyard wrecks clear of the Sirène Noire", overlaps == 0, overlaps)
+	local floating = 0
+	for _, p in ipairs(root.Life:GetChildren()) do
+		if p.Name == "SeaWhip" or p.Name == "GlassSponge" or p.Name == "BlackCoral" then
+			local h = layout:GroundHeight(p.Position.X, p.Position.Z)
+			local foot = p.Name == "GlassSponge" and p.Position.Y - p.Size.X / 2 or p.Position.Y - p.Size.Y / 2
+			if foot - h > 2.5 then floating += 1; print("  floating", p.Name, p.Position, h) end
+		end
+	end
+	check("graveyard life planted on the ledge", floating == 0, floating)
+end
+
+section("Biomes")
+local BiomeLookup = require(ReplicatedStorage.Shared.Modules.BiomeLookup)
+check("biomes published", ReplicatedStorage:FindFirstChild("Biomes") and #ReplicatedStorage.Biomes:GetChildren() >= 9)
+local function biomeAt(p) local b = BiomeLookup.Find(p) return b and b.DisplayName end
+local site = layout:GetAnchor("WreckSite")
+check("wreck ledge is the Cimetière", biomeAt(site.position + Vector3.new(0, 12, 0)) == "Cimetière de la Sirène", biomeAt(site.position + Vector3.new(0, 12, 0)))
+check("lagoon named", biomeAt(Vector3.new(120, -10, 0)) == "Le Lagon", biomeAt(Vector3.new(120, -10, 0)))
+if caves then
+	check("cave hall named", biomeAt(caves.chambers[2].center) == caves.chambers[2].spec.name, biomeAt(caves.chambers[2].center))
+end
+local rift = layout:GetAnchor("RiftFrame")
+check("rift named", biomeAt(rift.center + Vector3.new(0, 60, 0)) == "Faille abyssale", biomeAt(rift.center + Vector3.new(0, 60, 0)))
+check("open water named", biomeAt(Vector3.new(-700, -250, -700)) == "Le Grand Bleu", biomeAt(Vector3.new(-700, -250, -700)))
+
 section("Currents")
 for _, current in ipairs(Workspace.Currents:GetChildren()) do
 	local points = {}
@@ -166,7 +228,7 @@ for _, current in ipairs(Workspace.Currents:GetChildren()) do
 	for _, p in ipairs(points) do
 		if not isWater(p) and not (p.Y > 0 and not TERRAIN_SOLID_AT(p)) then blocked += 1 end
 		for _, volume in ipairs(layout.reserved) do
-			if volume.name == "Shipwreck" then
+			if volume.name == "Shipwreck" or volume.name:sub(1, 10) == "Graveyard_" then
 				local l = volume.cframe:PointToObjectSpace(p)
 				if math.abs(l.X) < volume.half.X and math.abs(l.Y) < volume.half.Y and math.abs(l.Z) < volume.half.Z then inWreck += 1 end
 			end

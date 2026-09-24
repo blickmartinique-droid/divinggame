@@ -23,7 +23,7 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 - **Construction du monde (ordre garanti)** — `World/WorldBootstrap.server.lua`
   est le seul script qui construit le monde : il exécute les modules de
   `World/Builders/` dans un ordre fixe (`Ocean` → `Seabed` → `Caves` →
-  `Shipwreck` → `Currents` → `BiomeDecor`) puis lève
+  `Shipwreck` → `WreckGraveyard` → `Currents` → `BiomeDecor` → `Biomes`) puis lève
   `Workspace.WorldReady`, que les spawners attendent. Avant, ces étapes
   étaient des scripts indépendants sans ordre garanti par Roblox (le
   remplissage d'eau pouvait noyer les grottes, les spawners rater les zones
@@ -136,6 +136,25 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   la coque, kelp sur le pont, lueurs bioluminescentes dedans ; le haut du
   grand mât gît sur le sable avec sa voile, ancre et cargaison dispersées.
   Butin : cale, pont des canons, cabine ; requins et méduses autour.
+- **Biome « Cimetière de la Sirène »** — `Builders/WreckGraveyard.lua` : la
+  terrasse est une longue corniche courbe qui suit le flanc (~680 studs de
+  long, même distance du sommet sur toute sa longueur, donc sans effet de
+  table). Autour de la Sirène Noire gisent le **Brick chaviré** (retourné,
+  quille vers le ciel, une brèche dans la coque et la poupe ouverte pour se
+  glisser dessous), la **Chaloupe brisée** (proue et poupe séparées, mât
+  tombé entre les deux) et **le Squelette** (quille et membrures). Une
+  traînée de débris court sur toute la corniche : tonneaux, caisses,
+  canons, boulets, amphores, coffres à demi enfouis, ancres et chaînes,
+  roue de gouvernail, cloche, lanternes englouties encore allumées. Vie des
+  profondeurs : gorgones-fouets, corail noir, éponges de verre, anémones
+  et plumes de mer lumineuses, gorgones sur les coques. Butin dans le brick,
+  la chaloupe et les coffres ; requins, méduses et raies manta.
+- **Biomes nommés** — `Builders/Biomes.lua` publie des volumes nommés dans
+  `ReplicatedStorage.Biomes` (Lagon, Tombant du récif, Forêt de kelp, Kelp
+  doré, Grand Bleu, Cimetière de la Sirène, Faille abyssale, Plaine
+  abyssale, et chaque salle des grottes). `BiomeLookup` trouve le biome
+  d'un point ; une carte annonce chaque biome à l'entrée (nom, description,
+  couleur) et le HUD affiche son nom sous la profondeur.
 - **Grottes de l'Éperon** — `Builders/Caves.lua`, un réseau creusé dans
   l'éperon. Accès le plus simple : le **Trou Bleu**, un puits qui s'ouvre
   directement au bord du lagon et plonge vers la Salle des Cristaux. Chaque
@@ -261,8 +280,8 @@ retire pas, seul un remplissage `Air` creuse) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 95 vérifications
-luau tests/ui_test.lua         # 31 vérifications
+luau tests/world_test.lua      # 109 vérifications
+luau tests/ui_test.lua         # 36 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
@@ -275,12 +294,15 @@ luau tests/ui_test.lua         # 31 vérifications
   bout, entrées débouchant en eau libre, posées sur la paroi et ouvertes
   vers le haut, décors posés sur la roche ; coque
   bordée, quille posée dans le sable, entrées de l'épave en eau libre ;
+  épaves du cimetière posées sur la corniche, sans chevaucher la Sirène,
+  brick à l'envers ouvert sur l'eau ; biomes nommés aux bons endroits ;
   chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné ;
   15 trésors minimum par zone, aucun trésor ni créature dans la roche, les
   5 espèces présentes.
 - `ui_test` : lance le HUD, l'annonceur de zone et l'écran de mort avec un
-  faux joueur local et les fait vivre une plongée (profondeur, oxygène bas,
-  trésor, vente, mort, réapparition) en vérifiant ce qu'ils affichent.
+  faux joueur local et les fait vivre une plongée (profondeur, entrée dans
+  un biome, oxygène bas, trésor, vente, mort, réapparition) en vérifiant ce
+  qu'ils affichent, accents compris (`UITheme.Upper`).
 
 Analyse statique en complément, avec les types Roblox :
 `luau-lsp analyze --definitions=globalTypes.d.luau --sourcemap=sourcemap.json src`

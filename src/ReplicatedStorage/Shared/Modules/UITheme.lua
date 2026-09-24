@@ -115,6 +115,20 @@ function UITheme.AutoScale(screenGui: ScreenGui)
 	return scale
 end
 
+-- Upper case that also handles French accents: Luau's string.upper only
+-- knows ASCII ("Récif" would come out "RéCIF").
+local ACCENTS = {
+	["à"] = "À", ["â"] = "Â", ["ä"] = "Ä", ["ç"] = "Ç", ["é"] = "É", ["è"] = "È", ["ê"] = "Ê", ["ë"] = "Ë",
+	["î"] = "Î", ["ï"] = "Ï", ["ô"] = "Ô", ["ö"] = "Ö", ["ù"] = "Ù", ["û"] = "Û", ["ü"] = "Ü", ["œ"] = "Œ", ["æ"] = "Æ",
+}
+function UITheme.Upper(text: string): string
+	local upper = string.upper(text)
+	for lower, capital in pairs(ACCENTS) do
+		upper = string.gsub(upper, lower, capital)
+	end
+	return upper
+end
+
 -- "12 480" style thousands separator.
 function UITheme.FormatNumber(value: number): string
 	local text = tostring(math.floor(value + 0.5))

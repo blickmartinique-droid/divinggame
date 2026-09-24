@@ -156,6 +156,33 @@ check("zone banner announced Grottes", card and findText(card, "GROTTES") ~= nil
 check("zone banner eyebrow gives the range", card and findText(card, "ZONE 2") ~= nil)
 check("zone banner hides again", card and card.Visible == false)
 
+section("Biome")
+ok, err = pcall(function()
+	local folder = Instance.new("Folder")
+	folder.Name = "Biomes"
+	local config = Instance.new("Configuration")
+	config:SetAttribute("Shape", "Cylinder")
+	config:SetAttribute("DisplayName", "Cimetière de la Sirène")
+	config:SetAttribute("Description", "La Sirène Noire et les épaves qui l'ont suivie")
+	config:SetAttribute("Color", Color3.fromRGB(255, 196, 110))
+	config:SetAttribute("Priority", 4)
+	config:SetAttribute("Center", Vector3.new(300, 0, 300))
+	config:SetAttribute("Radius", 200)
+	config:SetAttribute("MinY", -420)
+	config:SetAttribute("MaxY", -200)
+	config.Parent = folder
+	folder.Parent = ReplicatedStorage
+	root.Position = Vector3.new(320, -320, 290)
+	camera.CFrame = CFrame.new(Vector3.new(320, -315, 290))
+	set(depth, 320)
+	for _ = 1, 90 do frame() end
+end)
+check("biome detection survives", ok, err)
+check("biome banner names the Cimetière (accents upper-cased)", findText(card, "CIMETIÈRE DE LA SIRÈNE") ~= nil, findText(card, "CIMETI") and findText(card, "CIMETI").Text)
+check("biome banner has its description", findText(card, "épaves qui l'ont suivie") ~= nil)
+check("HUD names the biome under the depth", findText(hud, "^CIMETIÈRE DE LA SIRÈNE$") ~= nil)
+check("zone names keep their accents", findText(card, "ÉPAVE") ~= nil)
+
 section("Loot")
 ok, err = pcall(function()
 	set(carried, 350)
@@ -193,7 +220,7 @@ end)
 check("death screen survives", ok, err)
 check("death screen shown", death.Enabled == true)
 check("death cause shown", findText(death, "Requin de récif") ~= nil)
-check("deepest point of the dive shown", findText(death, "^140 m") ~= nil)
+check("deepest point of the dive shown", findText(death, "^320 m") ~= nil)
 check("lost loot shown", findText(death, "420") ~= nil)
 
 section("Respawn")
