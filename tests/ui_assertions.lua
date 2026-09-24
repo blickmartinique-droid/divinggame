@@ -170,6 +170,7 @@ ok, err = pcall(function()
 	config:SetAttribute("Radius", 200)
 	config:SetAttribute("MinY", -420)
 	config:SetAttribute("MaxY", -200)
+	config:SetAttribute("FogEnd", 200)
 	config.Parent = folder
 	folder.Parent = ReplicatedStorage
 	root.Position = Vector3.new(320, -320, 290)
@@ -180,6 +181,7 @@ end)
 check("biome detection survives", ok, err)
 check("biome banner names the Cimetière (accents upper-cased)", findText(card, "CIMETIÈRE DE LA SIRÈNE") ~= nil, findText(card, "CIMETI") and findText(card, "CIMETI").Text)
 check("biome banner has its description", findText(card, "épaves qui l'ont suivie") ~= nil)
+check("biome fog override lets the diver see further", game:GetService("Lighting").FogEnd > 150, game:GetService("Lighting").FogEnd)
 check("HUD names the biome under the depth", findText(hud, "^CIMETIÈRE DE LA SIRÈNE$") ~= nil)
 check("zone names keep their accents", findText(card, "ÉPAVE") ~= nil)
 

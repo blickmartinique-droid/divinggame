@@ -17,14 +17,21 @@ end
 
 function Biomes.Build(layout)
 	local list = {}
-	local function cylinder(name: string, description: string, color: Color3, priority: number, center: Vector3, radius: number, minY: number, maxY: number)
-		table.insert(list, { Shape = "Cylinder", DisplayName = name, Description = description, Color = color, Priority = priority, Center = center, Radius = radius, MinY = minY, MaxY = maxY })
+	-- `extra`: optional look overrides while inside (FogEnd).
+	local function add(entry, extra)
+		for key, value in pairs(extra or {}) do
+			entry[key] = value
+		end
+		table.insert(list, entry)
 	end
-	local function sphere(name: string, description: string, color: Color3, priority: number, center: Vector3, radius: number)
-		table.insert(list, { Shape = "Sphere", DisplayName = name, Description = description, Color = color, Priority = priority, Center = center, Radius = radius })
+	local function cylinder(name: string, description: string, color: Color3, priority: number, center: Vector3, radius: number, minY: number, maxY: number, extra: { [string]: any }?)
+		add({ Shape = "Cylinder", DisplayName = name, Description = description, Color = color, Priority = priority, Center = center, Radius = radius, MinY = minY, MaxY = maxY }, extra)
 	end
-	local function box(name: string, description: string, color: Color3, priority: number, cframe: CFrame, size: Vector3)
-		table.insert(list, { Shape = "Box", DisplayName = name, Description = description, Color = color, Priority = priority, CFrame = cframe, Size = size })
+	local function sphere(name: string, description: string, color: Color3, priority: number, center: Vector3, radius: number, extra: { [string]: any }?)
+		add({ Shape = "Sphere", DisplayName = name, Description = description, Color = color, Priority = priority, Center = center, Radius = radius }, extra)
+	end
+	local function box(name: string, description: string, color: Color3, priority: number, cframe: CFrame, size: Vector3, extra: { [string]: any }?)
+		add({ Shape = "Box", DisplayName = name, Description = description, Color = color, Priority = priority, CFrame = cframe, Size = size }, extra)
 	end
 
 	box("Le Grand Bleu", "Pleine eau : raies manta et requins patrouillent", Color3.fromRGB(70, 150, 255), 0, CFrame.new(0, -280, 0), Vector3.new(2000, 240, 2000))
@@ -40,11 +47,28 @@ function Biomes.Build(layout)
 			CFrame.fromMatrix(rift.center + Vector3.new(0, 70, 0), rift.along, Vector3.new(0, 1, 0)), Vector3.new(620, 180, 300))
 	end
 
+	-- The Cimetière follows its curved ledge: a string of cylinders along
+	-- the arc. Wreck biomes see further (FogEnd): their giants must read.
 	local graveyard = layout:GetAnchor("Graveyard")
 	local site = layout:GetAnchor("WreckSite")
+	local wreckFog = { FogEnd = 200 }
 	if graveyard and site then
-		cylinder("Cimetière de la Sirène", "La Sirène Noire et les épaves qui l'ont suivie", Color3.fromRGB(255, 196, 110), 4,
-			Vector3.new(graveyard.center.X, 0, graveyard.center.Z), graveyard.radius, site.position.Y - 90, site.position.Y + 140)
+		for t = -site.halfArc, site.halfArc, 85 do
+			local angle = site.angle + t / site.distance
+			local center = Vector3.new(math.cos(angle), 0, math.sin(angle)) * (site.distance + 25)
+			cylinder("Cimetière de la Sirène", "La Sirène Noire et les épaves qui l'ont suivie", Color3.fromRGB(255, 196, 110), 4,
+				center, 150, site.position.Y - 60, site.position.Y + 150, wreckFog)
+		end
+	end
+
+	-- L'Impératrice: around each half, and the debris field between them.
+	local liner = layout:GetAnchor("Liner")
+	if liner then
+		local name, text, color = "L'Impératrice", "Le paquebot géant, brisé en deux dans la plaine abyssale", Color3.fromRGB(120, 225, 255)
+		local fog = { FogEnd = 240 }
+		box(name, text, color, 4, liner.bowBox.cframe, liner.bowBox.size + Vector3.new(160, 80, 160), fog)
+		box(name, text, color, 4, liner.sternBox.cframe, liner.sternBox.size + Vector3.new(160, 80, 160), fog)
+		cylinder(name, text, color, 4, Vector3.new(liner.center.X, 0, liner.center.Z), 170, -530, -300, fog)
 	end
 
 	local caves = layout:GetAnchor("Caves")

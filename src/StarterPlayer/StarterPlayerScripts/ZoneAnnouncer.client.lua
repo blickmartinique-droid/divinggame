@@ -196,14 +196,17 @@ local function computeVisualsAtDepth(depth: number)
 	return zones[#zones]
 end
 
-local function applyVisuals(visuals)
+-- `fogFloor`: a biome can see further than its depth allows (the great
+-- wrecks must read as a whole); the atmosphere thins to match.
+local function applyVisuals(visuals, fogFloor: number)
+	local fogEnd = math.max(visuals.FogEnd, fogFloor)
 	Lighting.FogColor = visuals.FogColor
-	Lighting.FogEnd = visuals.FogEnd
+	Lighting.FogEnd = fogEnd
 	Lighting.Brightness = visuals.Brightness
 	Lighting.Ambient = visuals.Ambient
 	Lighting.OutdoorAmbient = visuals.OutdoorAmbient
 	Lighting.ExposureCompensation = visuals.ExposureCompensation
-	atmosphere.Density = visuals.AtmosphereDensity
+	atmosphere.Density = visuals.AtmosphereDensity * math.clamp(visuals.FogEnd / fogEnd, 0.35, 1)
 	atmosphere.Haze = visuals.AtmosphereHaze
 	atmosphere.Color = visuals.AtmosphereColor
 	atmosphere.Decay = visuals.AtmosphereDecay
@@ -228,14 +231,24 @@ local lastAnnounced = {}
 local biomeCheckAt = 0
 local clock = 0 -- seconds of play, from Heartbeat
 
+local fogTarget, fogFloor, appliedFogFloor, fogCheck = 0, 0, 0, 0
+
 RunService.Heartbeat:Connect(function(dt)
 	clock += dt
 	local camera = Workspace.CurrentCamera
 	if camera then
+		fogCheck -= dt
+		if fogCheck <= 0 then
+			fogCheck = 0.25
+			local biome = BiomeLookup.Find(camera.CFrame.Position)
+			fogTarget = biome and biome.FogEnd or 0
+		end
+		fogFloor += (fogTarget - fogFloor) * math.min(1, dt * 1.2)
 		local cameraDepth = DepthUtils.GetDepth(camera.CFrame.Position)
-		if not lastAppliedDepth or math.abs(cameraDepth - lastAppliedDepth) >= DEPTH_APPLY_EPSILON then
+		if not lastAppliedDepth or math.abs(cameraDepth - lastAppliedDepth) >= DEPTH_APPLY_EPSILON or math.abs(fogFloor - appliedFogFloor) > 0.5 then
 			lastAppliedDepth = cameraDepth
-			applyVisuals(computeVisualsAtDepth(cameraDepth))
+			appliedFogFloor = fogFloor
+			applyVisuals(computeVisualsAtDepth(cameraDepth), fogFloor)
 		end
 	end
 

@@ -296,7 +296,13 @@ local function spawnGroup(species, position: Vector3, budget: number, wanderRadi
 	local variant = math.random(1, CreatureBodies.ReefPaletteCount)
 	for index = 1, size do
 		local spread = Vector3.new((index % 3 - 1) * 2, (index % 2) * 1.5, (math.floor(index / 3) % 3 - 1) * 2)
-		spawnCreature(species, position + spread, { school = school, wanderRadius = wanderRadius, ground = ground, variant = variant, scale = 0.95 + math.random() * 0.1 })
+		local spot = position + spread
+		if ground then
+			-- Each fish of the school clears the seabed under itself (a school
+			-- can straddle a step in the reef).
+			spot = Vector3.new(spot.X, math.min(math.max(spot.Y, ground(spot.X, spot.Z) + 2), DepthUtils.SURFACE_Y - species.MinDepth), spot.Z)
+		end
+		spawnCreature(species, spot, { school = school, wanderRadius = wanderRadius, ground = ground, variant = variant, scale = 0.95 + math.random() * 0.1 })
 	end
 	return size
 end

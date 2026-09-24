@@ -199,6 +199,71 @@ if graveyard then
 	check("graveyard life planted on the ledge", floating == 0, floating)
 end
 
+section("Liner")
+local liner = layout:GetAnchor("Liner")
+check("L'Impératrice built", liner ~= nil)
+if liner then
+	local model = Workspace.World.Underwater.Imperatrice
+	local plates = 0
+	for _, p in ipairs(model.Hull:GetChildren()) do
+		if p.Name == "Plate" then plates += 1 end
+	end
+	check("liner is plated", plates > 900, plates)
+	-- Enormous: the halves span well over 800 studs end to end.
+	local bowTip = liner.bow * Vector3.new(0, 0, -450)
+	local sternTip = liner.stern * Vector3.new(0, 0, 450)
+	check("liner is enormous (bow to stern > 800 studs)", (bowTip - sternTip).Magnitude > 800, (bowTip - sternTip).Magnitude)
+	local outside = 0
+	for _, p in ipairs(model:GetDescendants()) do
+		if p:IsA("BasePart") and (math.abs(p.Position.X) > 985 or math.abs(p.Position.Z) > 985) then outside += 1 end
+	end
+	check("liner inside the ocean walls", outside == 0, outside)
+	local resting = 0
+	for _, keel in ipairs(liner.keelStations) do
+		local g = layout:GroundHeight(keel.X, keel.Z)
+		if keel.Y < g + 2 and keel.Y > g - 16 then resting += 1 end
+	end
+	check("bow keel sunk in the mud along her length", resting == #liner.keelStations, resting)
+	check("the gash in her bow opens on water", isWater(liner.gash + Vector3.new(0, 0, 0)))
+	check("grand staircase dome in open water", isWater(liner.wellTop + Vector3.new(0, 8, 0)))
+	-- The halves do not overlap each other or the ledge's wrecks.
+	local function corners(box)
+		local list = {}
+		for x = -1, 1, 2 do for y = -1, 1, 2 do for z = -1, 1, 2 do
+			table.insert(list, box.cframe * (box.size / 2 * Vector3.new(x, y, z) * 0.9))
+		end end end
+		return list
+	end
+	local clash = 0
+	for _, volume in ipairs(layout.reserved) do
+		if volume.kind == "box" and (volume.name == "Shipwreck" or volume.name:match("^Graveyard_")) then
+			for _, box in ipairs({ liner.bowBox, liner.sternBox }) do
+				for _, c in ipairs(corners(box)) do
+					local l = volume.cframe:PointToObjectSpace(c)
+					if math.abs(l.X) < volume.half.X and math.abs(l.Y) < volume.half.Y and math.abs(l.Z) < volume.half.Z then clash += 1 end
+				end
+			end
+		end
+	end
+	check("liner clear of the other wrecks", clash == 0, clash)
+	local sternInBow = 0
+	for _, c in ipairs(corners(liner.sternBox)) do
+		local l = liner.bowBox.cframe:PointToObjectSpace(c)
+		local h = liner.bowBox.size / 2
+		if math.abs(l.X) < h.X and math.abs(l.Y) < h.Y and math.abs(l.Z) < h.Z then sternInBow += 1 end
+	end
+	check("the two halves lie apart", sternInBow == 0, sternInBow)
+	local decorInHull = 0
+	for _, p in ipairs(Workspace.WorldDecor:GetDescendants()) do
+		if p:IsA("BasePart") and p.Name:sub(1, 9) ~= "Creatures" then
+			local l = liner.bowBox.cframe:PointToObjectSpace(p.Position)
+			local h = liner.bowBox.size / 2
+			if math.abs(l.X) < h.X and math.abs(l.Y) < h.Y and math.abs(l.Z) < h.Z then decorInHull += 1 end
+		end
+	end
+	check("no seabed decor growing through the liner", decorInHull == 0, decorInHull)
+end
+
 section("Biomes")
 local BiomeLookup = require(ReplicatedStorage.Shared.Modules.BiomeLookup)
 check("biomes published", ReplicatedStorage:FindFirstChild("Biomes") and #ReplicatedStorage.Biomes:GetChildren() >= 9)
@@ -212,6 +277,13 @@ end
 local rift = layout:GetAnchor("RiftFrame")
 check("rift named", biomeAt(rift.center + Vector3.new(0, 60, 0)) == "Faille abyssale", biomeAt(rift.center + Vector3.new(0, 60, 0)))
 check("open water named", biomeAt(Vector3.new(-700, -250, -700)) == "Le Grand Bleu", biomeAt(Vector3.new(-700, -250, -700)))
+if liner then
+	check("liner biome named", biomeAt(liner.center + Vector3.new(0, 20, 0)) == "L'Impératrice", biomeAt(liner.center + Vector3.new(0, 20, 0)))
+	local b = BiomeLookup.Find(liner.center + Vector3.new(0, 20, 0))
+	check("liner biome sees further", b and b.FogEnd and b.FogEnd >= 200)
+	local bowMid = liner.bow * Vector3.new(0, 60, -250)
+	check("liner bow is in its biome", biomeAt(bowMid) == "L'Impératrice", biomeAt(bowMid))
+end
 
 section("Currents")
 for _, current in ipairs(Workspace.Currents:GetChildren()) do
