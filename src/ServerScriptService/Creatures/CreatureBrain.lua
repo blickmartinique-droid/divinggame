@@ -40,10 +40,21 @@ local function randomUnitVector(): Vector3
 	return v.Unit
 end
 
-local function clampToBand(species, position: Vector3): Vector3
+-- Depth band, and -- when the creature lives in open water (not in a
+-- cave) -- at least GROUND_CLEARANCE above the seabed, so nothing swims
+-- through the seamount.
+-- (The band's shallow limit still wins over shallow water, e.g. a lagoon
+-- only a few studs deep.)
+local GROUND_CLEARANCE = 2
+
+local function clampToBand(species, position: Vector3, ground: ((number, number) -> number)?): Vector3
 	local minY = DepthUtils.SURFACE_Y - species.MaxDepth
 	local maxY = DepthUtils.SURFACE_Y - species.MinDepth
-	return Vector3.new(position.X, math.clamp(position.Y, minY, maxY), position.Z)
+	local y = math.clamp(position.Y, minY, maxY)
+	if ground then
+		y = math.min(math.max(y, ground(position.X, position.Z) + GROUND_CLEARANCE), maxY)
+	end
+	return Vector3.new(position.X, y, position.Z)
 end
 
 -- The delivered animal models face -X in their own space, while Roblox
@@ -69,9 +80,10 @@ end
 local School = {}
 School.__index = School
 
-function CreatureBrain.newSchool(species, home: Vector3, wanderRadius: number?)
+function CreatureBrain.newSchool(species, home: Vector3, wanderRadius: number?, ground: ((number, number) -> number)?)
 	local self = setmetatable({
 		species = species,
+		ground = ground,
 		home = home,
 		wanderRadius = wanderRadius or species.WanderRadius,
 		center = home,
@@ -89,7 +101,7 @@ function School:Update(dt: number)
 	self.retargetTimer -= dt
 	if self.retargetTimer <= 0 or (self.goal - self.center).Magnitude < GOAL_REACHED_DISTANCE then
 		local offset = randomUnitVector() * (self.wanderRadius * (0.3 + math.random() * 0.7))
-		self.goal = clampToBand(self.species, self.home + offset)
+		self.goal = clampToBand(self.species, self.home + offset, self.ground)
 		self.retargetTimer = WANDER_RETARGET_MIN + math.random() * (WANDER_RETARGET_MAX - WANDER_RETARGET_MIN)
 	end
 	local toGoal = self.goal - self.center
@@ -112,7 +124,7 @@ end
 
 -- Brain -------------------------------------------------------------------------------
 
--- options: { school = School?, wanderRadius = number? }
+-- options: { school = School?, wanderRadius = number?, ground = (x, z) -> y? }
 function CreatureBrain.new(model: Model, species, home: Vector3, onAttack, options)
 	options = options or {}
 	local root = model.PrimaryPart
@@ -132,6 +144,7 @@ function CreatureBrain.new(model: Model, species, home: Vector3, onAttack, optio
 		attackCooldown = 0,
 		onAttack = onAttack,
 		wanderRadius = options.wanderRadius or species.WanderRadius,
+		ground = options.ground,
 		school = options.school,
 		schoolIndex = 0,
 		time = math.random() * 100,
@@ -147,7 +160,7 @@ end
 -- Keeps any goal inside the species' depth band so a creature never
 -- wanders up to the surface or into the seafloor.
 function CreatureBrain:clampToDepthBand(position: Vector3): Vector3
-	return clampToBand(self.species, position)
+	return clampToBand(self.species, position, self.ground)
 end
 
 function CreatureBrain:pickWanderGoal()

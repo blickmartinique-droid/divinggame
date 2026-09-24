@@ -112,8 +112,8 @@ local function reefFish(model: Model, L: number, H: number, _W: number, variant:
 	for i = 1, bandCount do
 		local z = -L * 0.06 + bodyLength * ((i / (bandCount + 1)) - 0.5) * 0.9
 		local taper = 1 - math.abs((i / (bandCount + 1)) - 0.5) * 0.9
-		weld(body, ellipsoid(model, "BandEdge", Vector3.new(bodyWidth * 1.04, bodyHeight * taper * 0.98, L * 0.11), CFrame.new(0, 0, z), palette.edge))
-		weld(body, ellipsoid(model, "Band", Vector3.new(bodyWidth * 1.07, bodyHeight * taper * 0.94, L * 0.07), CFrame.new(0, 0, z), palette.band))
+		weld(body, ellipsoid(model, "BandEdge", Vector3.new(bodyWidth * 1.04, bodyHeight * taper * 0.98, L * 0.17), CFrame.new(0, 0, z), palette.edge))
+		weld(body, ellipsoid(model, "Band", Vector3.new(bodyWidth * 1.07, bodyHeight * taper * 0.95, L * 0.13), CFrame.new(0, 0, z), palette.band))
 	end
 	if palette.saddle then
 		weld(body, ellipsoid(model, "Saddle", Vector3.new(bodyWidth * 1.05, bodyHeight * 0.45, bodyLength * 0.62), CFrame.new(0, bodyHeight * 0.18, -L * 0.03), palette.band))
@@ -184,21 +184,23 @@ end
 local function manta(model: Model, L: number, H: number, W: number)
 	local TOP = Color3.fromRGB(34, 42, 56)
 	local BELLY = Color3.fromRGB(232, 236, 240)
-	local PATCH = Color3.fromRGB(196, 204, 214)
+	local PATCH = Color3.fromRGB(128, 136, 148)
 
 	local body = ellipsoid(model, "Body", Vector3.new(W * 0.3, H * 0.95, L * 0.56), CFrame.new(0, 0, -L * 0.05), TOP)
 	weld(body, ellipsoid(model, "Belly", Vector3.new(W * 0.27, H * 0.6, L * 0.48), CFrame.new(0, -H * 0.22, -L * 0.05), BELLY))
 	for _, side in ipairs({ -1, 1 }) do
-		weld(body, ellipsoid(model, "ShoulderPatch", Vector3.new(W * 0.14, H * 0.2, L * 0.11), CFrame.new(side * W * 0.11, H * 0.4, -L * 0.1) * CFrame.Angles(0, math.rad(side * 35), 0), PATCH))
+		weld(body, ellipsoid(model, "ShoulderPatch", Vector3.new(W * 0.1, H * 0.14, L * 0.2), CFrame.new(side * W * 0.1, H * 0.38, -L * 0.06) * CFrame.Angles(0, math.rad(side * 40), 0), PATCH))
 		-- Cephalic lobes curling forward either side of the mouth.
 		weld(body, ellipsoid(model, "CephalicLobe", Vector3.new(W * 0.04, H * 0.5, L * 0.16), CFrame.new(side * W * 0.1, -H * 0.05, -L * 0.36) * CFrame.Angles(0, 0, side * 0.3), TOP))
 		weld(body, ellipsoid(model, "Eye", Vector3.new(W * 0.025, H * 0.28, H * 0.28), CFrame.new(side * W * 0.145, H * 0.06, -L * 0.25), PUPIL, Enum.Material.Glass))
 
 		-- Wing: a broad swept ellipsoid, white underneath, flapping slowly.
 		local wingCenter = Vector3.new(side * W * 0.32, 0, L * 0.02)
-		local wing = ellipsoid(model, "Wing", Vector3.new(W * 0.42, H * 0.34, L * 0.44), CFrame.new(wingCenter) * CFrame.Angles(0, math.rad(side * -22), 0), TOP)
+		local wing = ellipsoid(model, "Wing", Vector3.new(W * 0.42, H * 0.3, L * 0.36), CFrame.new(wingCenter) * CFrame.Angles(0, math.rad(side * -26), 0), TOP)
 		weld(wing, ellipsoid(model, "WingUnder", Vector3.new(W * 0.36, H * 0.2, L * 0.36), CFrame.new(wingCenter + Vector3.new(0, -H * 0.06, 0)) * CFrame.Angles(0, math.rad(side * -22), 0), BELLY))
-		weld(wing, ellipsoid(model, "WingTip", Vector3.new(W * 0.14, H * 0.18, L * 0.12), CFrame.new(side * W * 0.5, 0, L * 0.12) * CFrame.Angles(0, math.rad(side * -40), 0), TOP))
+		-- Long pointed tips swept back: the manta's unmistakable outline.
+		weld(wing, ellipsoid(model, "WingTip", Vector3.new(W * 0.26, H * 0.14, L * 0.1), CFrame.new(side * W * 0.47, 0, L * 0.15) * CFrame.Angles(0, math.rad(side * -38), 0), TOP))
+		weld(wing, ellipsoid(model, "WingTipEnd", Vector3.new(W * 0.12, H * 0.1, L * 0.05), CFrame.new(side * W * 0.58, 0, L * 0.25) * CFrame.Angles(0, math.rad(side * -48), 0), TOP))
 		joint(side < 0 and "WingL" or "WingR", body, wing, Vector3.new(side * W * 0.12, 0, -L * 0.02), Vector3.new(0, 0, side), math.rad(24), 0.32, 0)
 	end
 	local tail = basePart("Part", model, "Tail", Vector3.new(L * 0.5, 0.22, 0.22), CFrame.new(0, 0, L * 0.45) * CFrame.Angles(0, math.pi / 2, 0), TOP)

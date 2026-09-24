@@ -15,6 +15,8 @@
 --   RegionWanderRadius for creatures: caps how far anything spawned here
 --                 roams from its spawn point (keeps cave dwellers in
 --                 their cave -- creatures have no obstacle avoidance)
+--   RegionUnderground true for regions inside caves: what spawns there is
+--                 not kept above the seabed (it lives below it)
 --
 -- Regions can live anywhere in Workspace (inside the wreck model, the cave
 -- model, a canyon...), so spawn areas move with the Blender/Studio geometry

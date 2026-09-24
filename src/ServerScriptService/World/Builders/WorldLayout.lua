@@ -31,12 +31,51 @@ function WorldLayout.new(seed: number?)
 	}, WorldLayout)
 end
 
-function WorldLayout:Random(salt: string): Random
+-- A small deterministic generator (Park-Miller) with the subset of the
+-- Random API the builders use. Pure Lua on purpose: the tests run the
+-- exact same sequence as the game, so they check the real map.
+local Rng = {}
+Rng.__index = Rng
+
+function Rng.new(seed: number)
+	local state = math.floor(math.abs(seed)) % 2147483646 + 1
+	return setmetatable({ state = state }, Rng)
+end
+
+function Rng:NextNumber(minimum: number?, maximum: number?): number
+	self.state = (self.state * 16807) % 2147483647
+	local x = (self.state - 1) / 2147483646
+	if minimum and maximum then
+		return minimum + (maximum - minimum) * x
+	end
+	return x
+end
+
+function Rng:NextInteger(minimum: number, maximum: number): number
+	return math.min(maximum, minimum + math.floor(self:NextNumber() * (maximum - minimum + 1)))
+end
+
+WorldLayout.Rng = Rng
+
+function WorldLayout:Random(salt: string)
 	local hash = self.seed
 	for i = 1, #salt do
 		hash = (hash * 31 + string.byte(salt, i)) % 2147483647
 	end
-	return Random.new(hash)
+	return Rng.new(hash)
+end
+
+-- Seabed height (y of the rock/sand surface) at a world x/z, published by
+-- the Seabed builder. Defaults to the flat ocean floor.
+function WorldLayout:SetGround(heightAt: (number, number) -> number)
+	self.ground = heightAt
+end
+
+function WorldLayout:GroundHeight(x: number, z: number): number
+	if self.ground then
+		return self.ground(x, z)
+	end
+	return WorldLayout.FloorY
 end
 
 function WorldLayout:SetAnchor(name: string, value: any)
@@ -103,6 +142,9 @@ function WorldLayout:IsFree(point: Vector3, margin: number?): (boolean, string?)
 	local limit = WorldLayout.OceanHalfWidth - m
 	if math.abs(point.X) > limit or math.abs(point.Z) > limit then
 		return false, "OceanEdge"
+	end
+	if self.ground and point.Y < self.ground(point.X, point.Z) + m then
+		return false, "Seabed"
 	end
 	for _, volume in ipairs(self.reserved) do
 		if inside(volume, point, m) then

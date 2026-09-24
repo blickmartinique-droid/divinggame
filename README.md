@@ -22,13 +22,13 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   Lock).
 - **Construction du monde (ordre garanti)** — `World/WorldBootstrap.server.lua`
   est le seul script qui construit le monde : il exécute les modules de
-  `World/Builders/` dans un ordre fixe (`Ocean` → `CaveRegions` →
-  `MegaWreckShip` → `Currents` → `BiomeDecor`) puis lève
+  `World/Builders/` dans un ordre fixe (`Ocean` → `Seabed` → `Caves` →
+  `Shipwreck` → `Currents` → `BiomeDecor`) puis lève
   `Workspace.WorldReady`, que les spawners attendent. Avant, ces étapes
   étaient des scripts indépendants sans ordre garanti par Roblox (le
   remplissage d'eau pouvait noyer les grottes, les spawners rater les zones
   de l'épave). `WorldLayout` partage les volumes réservés (épave, montagnes,
-  courants, plage) pour que les décors ne traversent rien, et un `Random`
+  courants, plage) et la hauteur du sol, pour que rien ne traverse le relief, et un `Random`
   à graine fixe : la carte est identique à chaque démarrage.
 - **Océan & plage** — `Builders/Ocean.lua` : vide d'abord tout terrain
   resté dans la place, puis océan de 500 m sur 2000×2000 studs (Terrain
@@ -102,34 +102,41 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   tentacules), articulé par des `Motor6D` que `CreatureAnimator.client.lua`
   anime localement (queue qui bat, ailes, nageoires, tentacules ; rythme
   doublé en fuite/chasse). Voir « Importer les animaux » ci-dessous.
-- **Épave géante (`MegaWreckShip`)** — `Workspace/World/Underwater/WreckZone/
-  MegaWreckShip`, un navire massif (~724×254×131 studs à l'échelle actuelle,
-  9 salles nommées sur plusieurs ponts, mâts, canons, escaliers, corridors
-  élargis). Reconstruit à partir de `MegaWreckShipData.lua` (table
-  auto-générée, 645 entrées : nom/catégorie/position/rotation/taille/couleur,
-  une par pièce du modèle source) par `Builders/MegaWreckShip.lua`. Voir le
-  commentaire en tête de ce script pour la limite technique qui a motivé
-  cette approche (boîtes orientées plutôt que le maillage réel) et comment la
-  remplacer pièce par pièce par de vrais `MeshPart` si le modèle est importé
-  plus tard dans Studio. Brèches dans la coque (`EntryPoints`), salles de
-  loot (`LootSpots`, déjà taguées `SpawnRegion` pour `TreasureSpawner`), une
-  zone de spawn de créatures (`RequinRecif`/`MeduseLumineuse`) et des repères (`Landmarks`,
-  `InteractionPoints`) sont déjà en place. Éclairage intérieur complet sous
-  `MegaWreckShip/Lighting` (`CorridorLights`/`RoomLights`/`EntranceLights`/
-  `NavigationLights`/`AmbientLights`, ~60 `PointLight` au total, palette
-  bleu/cyan sombre avec accent chaud dans les 3 salles majeures) — voir le
-  commentaire "Interior lighting rework" dans le script pour le détail.
-- **4 régions montagnes/grottes** — `Workspace/World/Underwater/CaveRegions`,
-  construites par `Builders/CaveRegionBuilder.lua` à partir de 4 modèles
-  source (`CaveRegion1..4Data.lua`) et placées par `Builders/CaveRegions.lua`.
-  Vrais volumes de **Terrain** (Rock plein, Water creusé). Chaque région est
-  un mont sous-marin **enraciné au fond** (base évasée jusqu'à -500) avec
-  des cavernes **fermées** (coque rocheuse autour de chaque caverne), des
-  entrées qui débouchent réellement à l'extérieur, un puits vers le sommet,
-  des ruines/terrasses/coraux posés sur la roche (plus rien ne flotte ni
-  n'est enterré), et de la vie dans les cavernes : cristaux lumineux,
-  champignons bioluminescents, stalactites, vers luisants. Les courants de
-  liaison partent/arrivent aux vraies entrées des grottes.
+- **Relief sous-marin** — `Builders/Seabed.lua` : l'île est le sommet d'un
+  mont volcanique. Crête du récif puis **tombant** (falaise jusqu'à ~110 m),
+  flancs ravinés jusqu'à la plaine abyssale, **terrasse de sable à ~330 m**
+  (nord-est) où gît l'épave, **éperon rocheux** (nord-ouest) qui abrite les
+  grottes, et **faille abyssale** (deux crêtes de basalte, un canyon). Champ
+  de hauteur (bruit déterministe `Noise.lua`) écrit en colonnes de Terrain,
+  matériau de surface selon profondeur et pente (calcaire de récif, sable,
+  roche, vase et basalte au fond) et strates d'ardoise sur les falaises.
+  `layout:GroundHeight` sert à tout poser sur le vrai sol.
+- **Épave : « La Sirène Noire »** — `Builders/Shipwreck.lua`, un galion à
+  trois mâts (~190 studs) posé sur la terrasse, gîte vers l'aval et ensablé.
+  Coque réellement courbe, bordée planche par planche (surface paramétrique
+  échantillonnée en stations × virures), cale, pont des canons avec canons
+  aux sabords, pont principal effondré autour du grand mât brisé, gaillard
+  d'avant, cabine du capitaine sous la dunette (table, coffre, lanterne,
+  fenêtres de poupe). Grande brèche bâbord (entrée de la cale, membrures
+  visibles), trou tribord, mât d'artimon cassé, misaine debout aux voiles
+  déchirées, beaupré et figure de proue, gouvernail. Coraux et éponges sur
+  la coque, kelp sur le pont, lueurs bioluminescentes dedans ; le haut du
+  grand mât gît sur le sable avec sa voile, ancre et cargaison dispersées.
+  Butin : cale, pont des canons, cabine ; requins et méduses autour.
+- **Grottes de l'Éperon** — `Builders/Caves.lua`, un réseau creusé dans
+  l'éperon : **Porche du Récif** (~118 m) → **Salle des Cristaux** (géode de
+  cristaux lumineux) → **La Cathédrale** (~185 m, piliers de roche, puits de
+  lumière du jour tombant d'une cheminée, autel ancien et idole) → sortie
+  **Fenêtre** ; → **Grotte aux Méduses** (~312 m, bassin bioluminescent) →
+  **Sortie des Abysses**. Tunnels sinueux (splines), salles organiques à sol
+  de sable, stalactites, champignons et vers luisants posés sur les surfaces
+  calculées. Un courant aspire vers le Porche.
+- **Biomes** — `Builders/BiomeDecor.lua` : récif du lagon (coraux branchus,
+  cerveaux, tables, éventails, éponges, anémones, oursins, étoiles de mer,
+  bénitiers, herbiers, kelp), gorgones et éponges sur le tombant, **forêt de
+  kelp géant** sur le flanc ouest, **cheminées hydrothermales** fumantes
+  avec vers tubicoles et roche en fusion dans la faille, plumes de mer et
+  éponges de verre sur la plaine. Plantes animées par `FloraAnimator.client.lua`.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
@@ -224,18 +231,21 @@ erreur comme dans Studio, le Terrain enregistre chaque remplissage) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 88 vérifications
+luau tests/world_test.lua      # 81 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
   cerveau, orientation des modèles, anciens noms d'espèces, clips de nage,
   règle de population par espèce.
 - `world_test` : exécute le vrai `WorldBootstrap` puis les spawners et
-  vérifie la géométrie obtenue : fond marin sans trou, pas d'eau au-dessus
-  de la surface, montagnes enracinées, cavernes fermées, entrées ouvertes,
-  chaque courant ne traverse que de l'eau et jamais l'épave, pitons hors
-  des volumes réservés, 15 trésors minimum par zone et aucun enterré, les
-  5 espèces présentes, corps articulés.
+  vérifie la géométrie obtenue : sol continu sous la plage, tombant, fond
+  sans trou, hauteur du sol conforme au terrain écrit ; salles des grottes
+  ouvertes, fermées par un toit, sol de sable, tunnels dégagés de bout en
+  bout, entrées débouchant en eau libre, décors posés sur la roche ; coque
+  bordée, quille posée dans le sable, entrées de l'épave en eau libre ;
+  chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné ;
+  15 trésors minimum par zone, aucun trésor ni créature dans la roche, les
+  5 espèces présentes.
 
 Analyse statique en complément, avec les types Roblox :
 `luau-lsp analyze --definitions=globalTypes.d.luau --sourcemap=sourcemap.json src`

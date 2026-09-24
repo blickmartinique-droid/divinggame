@@ -78,7 +78,9 @@ CF.__index = function(t, k)
 		end
 	end
 	if k == "LookVector" then return -col(t.r, 3) end
-	if k == "RightVector" then return col(t.r, 1) end
+	if k == "RightVector" or k == "XVector" then return col(t.r, 1) end
+	if k == "YVector" then return col(t.r, 2) end
+	if k == "ZVector" then return col(t.r, 3) end
 	if k == "UpVector" then return col(t.r, 2) end
 	if k == "VectorToWorldSpace" then return function(s, v) return mulVec(s.r, v) end end
 	if k == "PointToWorldSpace" then return function(s, v) return s.p + mulVec(s.r, v) end end
@@ -138,6 +140,15 @@ TweenInfo = valueType("TweenInfo")
 UDim = valueType("UDim")
 UDim2 = { new = function(...) return { _type = "UDim2", _args = { ... } } end, fromScale = function(...) return { _type = "UDim2" } end, fromOffset = function(...) return { _type = "UDim2" } end }
 Vector2 = { new = function(x, y) return { X = x or 0, Y = y or 0 } end }
+
+local Region3MT = {}
+Region3MT.__index = Region3MT
+function Region3MT:ExpandToGrid(res)
+	local function down(v) return math.floor(v / res) * res end
+	local function up(v) return math.ceil(v / res) * res end
+	return setmetatable({ min = v3(down(self.min.X), down(self.min.Y), down(self.min.Z)), max = v3(up(self.max.X), up(self.max.Y), up(self.max.Z)) }, Region3MT)
+end
+Region3 = { new = function(a, b) return setmetatable({ min = a, max = b }, Region3MT) end }
 
 -- Random: deterministic LCG with Roblox's API shape.
 local RandomMT = {}
@@ -407,28 +418,63 @@ local CollectionStub = service("CollectionService", "CollectionService")
 -- Terrain: every fill is recorded, so tests can ask what material a point
 -- ends up as (last write wins, like real voxels).
 TERRAIN_OPS = {}
+-- Ops are also filed into 32-stud XZ cells so a point query only scans the
+-- ops that can touch it (the seabed alone is ~90k column fills).
+local CELL = 32
+local terrainCells = {}
+local function cellKey(cx, cz) return cx * 100000 + cz end
+local function fileOp(op, minX, maxX, minZ, maxZ)
+	op.index = #TERRAIN_OPS + 1
+	TERRAIN_OPS[op.index] = op
+	for cx = math.floor(minX / CELL), math.floor(maxX / CELL) do
+		for cz = math.floor(minZ / CELL), math.floor(maxZ / CELL) do
+			local key = cellKey(cx, cz)
+			local list = terrainCells[key]
+			if not list then list = {}; terrainCells[key] = list end
+			list[#list + 1] = op
+		end
+	end
+end
 local TerrainInst = newInstance("Terrain")
 TerrainInst.Name = "Terrain"
 TerrainInst.Parent = Workspace
 rawset(Workspace, "Terrain", TerrainInst)
-function TerrainInst:Clear() TERRAIN_OPS = {} end
+function TerrainInst:Clear() TERRAIN_OPS = {}; terrainCells = {} end
+local function fileBox(op, center, reach)
+	fileOp(op, center.X - reach, center.X + reach, center.Z - reach, center.Z + reach)
+end
 function TerrainInst:FillBlock(cframe, size, material)
-	assert(size.X > 0 and size.Y > 0 and size.Z > 0, "FillBlock: empty size")
+	assert(size.X > 0 and size.Y > 0 and size.Z > 0, "FillBlock: empty size " .. tostring(size))
 	assert(size.X * size.Y * size.Z / 64 <= 4194304, "FillBlock: extents too large " .. tostring(size))
-	table.insert(TERRAIN_OPS, { kind = "block", cframe = cframe, half = size / 2, material = material.Name })
+	local r = cframe.r
+	local axisAligned = r[1] == 1 and r[5] == 1 and r[9] == 1
+	local c, h = cframe.Position, size / 2
+	fileBox({ kind = axisAligned and "aabb" or "block", cframe = cframe, half = h, material = material.Name,
+		minX = c.X - h.X, maxX = c.X + h.X, minY = c.Y - h.Y, maxY = c.Y + h.Y, minZ = c.Z - h.Z, maxZ = c.Z + h.Z }, c, h.Magnitude)
 end
 function TerrainInst:FillCylinder(cframe, height, radius, material)
-	table.insert(TERRAIN_OPS, { kind = "cylinder", cframe = cframe, height = height, radius = radius, material = material.Name })
+	assert(height > 0 and radius > 0, "FillCylinder: empty")
+	fileBox({ kind = "cylinder", cframe = cframe, height = height, radius = radius, material = material.Name }, cframe.Position, math.sqrt(radius * radius + height * height / 4))
 end
 function TerrainInst:FillBall(center, radius, material)
-	table.insert(TERRAIN_OPS, { kind = "ball", center = center, radius = radius, material = material.Name })
+	fileBox({ kind = "ball", center = center, radius = radius, material = material.Name }, center, radius)
 end
 function TerrainInst:FillWedge(cframe, size, material)
-	table.insert(TERRAIN_OPS, { kind = "block", cframe = cframe, half = size / 2, material = material.Name })
+	fileBox({ kind = "block", cframe = cframe, half = size / 2, material = material.Name }, cframe.Position, (size / 2).Magnitude)
 end
 function TerrainInst:SetMaterialColor() end
+function TerrainInst:ReplaceMaterial(region, res, from, to)
+	assert(res == 4 and region.min and region.max, "ReplaceMaterial: bad region")
+end
 local function opContains(op, p)
-	if op.kind == "ball" then return (p - op.center).Magnitude <= op.radius end
+	if op.kind == "aabb" then
+		return p.X >= op.minX and p.X <= op.maxX and p.Y >= op.minY and p.Y <= op.maxY and p.Z >= op.minZ and p.Z <= op.maxZ
+	end
+	if op.kind == "ball" then
+		local c = op.center
+		local dx, dy, dz = p.X - c.X, p.Y - c.Y, p.Z - c.Z
+		return dx * dx + dy * dy + dz * dz <= op.radius * op.radius
+	end
 	local l = op.cframe:PointToObjectSpace(p)
 	if op.kind == "cylinder" then
 		return math.abs(l.Y) <= op.height / 2 and math.sqrt(l.X * l.X + l.Z * l.Z) <= op.radius
@@ -436,10 +482,18 @@ local function opContains(op, p)
 	return math.abs(l.X) <= op.half.X and math.abs(l.Y) <= op.half.Y and math.abs(l.Z) <= op.half.Z
 end
 TERRAIN_MATERIAL_AT = function(p)
-	for i = #TERRAIN_OPS, 1, -1 do
-		if opContains(TERRAIN_OPS[i], p) then return TERRAIN_OPS[i].material end
+	local list = terrainCells[cellKey(math.floor(p.X / CELL), math.floor(p.Z / CELL))]
+	if list then
+		for i = #list, 1, -1 do
+			if opContains(list[i], p) then return list[i].material end
+		end
 	end
 	return "Air"
+end
+-- Anything that is neither water nor empty.
+TERRAIN_SOLID_AT = function(p)
+	local m = TERRAIN_MATERIAL_AT(p)
+	return m ~= "Water" and m ~= "Air"
 end
 
 local LightingStub = service("Lighting", "Lighting")
@@ -501,14 +555,16 @@ end
 -- task: spawn/delay run the function in a coroutine; task.wait inside one
 -- parks it forever (a `while true do task.wait() ... end` loop runs one
 -- iteration instead of hanging the test), and is a no-op on the main thread.
+local stubThreads = setmetatable({}, { __mode = "k" })
 local function runThread(fn, ...)
 	local co = coroutine.create(fn)
+	stubThreads[co] = true
 	local ok, err = coroutine.resume(co, ...)
 	if not ok then error(err, 0) end
 	return co
 end
 task = {
-	wait = function() if coroutine.isyieldable() then coroutine.yield() end return 0 end,
+	wait = function() if stubThreads[coroutine.running()] then coroutine.yield() end return 0 end,
 	spawn = function(fn, ...) return runThread(fn, ...) end,
 	defer = function(fn, ...) return runThread(fn, ...) end,
 	delay = function(_, fn, ...) return runThread(fn, ...) end,

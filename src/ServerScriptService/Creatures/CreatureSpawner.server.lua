@@ -262,20 +262,37 @@ end
 
 -- Spawns one creature, or a whole shoal for a schooling species (up to
 -- `budget` members). Returns how many were spawned.
-local function spawnGroup(species, position: Vector3, budget: number, wanderRadius: number?): number
+-- Open-water creatures keep clear of the seabed; cave dwellers (their
+-- region flagged RegionUnderground) live below it by definition.
+local function groundFunction(underground: boolean?)
+	local layout = WorldLayout.Current
+	if underground or not layout then
+		return nil
+	end
+	return function(x: number, z: number): number
+		return layout:GroundHeight(x, z)
+	end
+end
+
+local function spawnGroup(species, position: Vector3, budget: number, wanderRadius: number?, underground: boolean?): number
 	local size = math.min(species.SchoolSize or 1, budget)
+	local ground = groundFunction(underground)
+	if ground then
+		local shallowest = DepthUtils.SURFACE_Y - species.MinDepth
+		position = Vector3.new(position.X, math.min(math.max(position.Y, ground(position.X, position.Z) + 3), shallowest), position.Z)
+	end
 	if size <= 1 then
-		spawnCreature(species, position, { wanderRadius = wanderRadius })
+		spawnCreature(species, position, { wanderRadius = wanderRadius, ground = ground })
 		return 1
 	end
-	local school = CreatureBrain.newSchool(species, position, wanderRadius)
+	local school = CreatureBrain.newSchool(species, position, wanderRadius, ground)
 	table.insert(schools, school)
 	-- One palette per shoal (a school of mixed colours reads as random
 	-- noise, a matching one as a real school), sizes within a few percent.
 	local variant = math.random(1, CreatureBodies.ReefPaletteCount)
 	for index = 1, size do
 		local spread = Vector3.new((index % 3 - 1) * 2, (index % 2) * 1.5, (math.floor(index / 3) % 3 - 1) * 2)
-		spawnCreature(species, position + spread, { school = school, wanderRadius = wanderRadius, variant = variant, scale = 0.95 + math.random() * 0.1 })
+		spawnCreature(species, position + spread, { school = school, wanderRadius = wanderRadius, ground = ground, variant = variant, scale = 0.95 + math.random() * 0.1 })
 	end
 	return size
 end
@@ -349,7 +366,7 @@ local function populateRegion(region: BasePart)
 		local position = SpawnRegions.RandomPointIn(region)
 		local depth = DepthUtils.GetDepth(position)
 		position = Vector3.new(position.X, DepthUtils.SURFACE_Y - math.clamp(depth, species.MinDepth, species.MaxDepth), position.Z)
-		spawned += spawnGroup(species, position, count - spawned, wanderRadius)
+		spawned += spawnGroup(species, position, count - spawned, wanderRadius, region:GetAttribute("RegionUnderground") == true)
 	end
 end
 

@@ -36,8 +36,8 @@ local RESPAWN_MIN, RESPAWN_MAX = 90, 150
 -- Open water only: clear of the beach (its terrain reaches 180 studs out)
 -- and inside the part of the ocean the other systems use.
 local MIN_RADIUS = 200
-local MAX_RADIUS = 600
-local PLACEMENT_ATTEMPTS = 24
+local MAX_RADIUS = 880
+local PLACEMENT_ATTEMPTS = 40
 
 local RARITY_COLORS = {
 	Commune = Color3.fromRGB(200, 200, 200),

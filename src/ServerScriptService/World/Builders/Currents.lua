@@ -520,84 +520,112 @@ function Currents.Build(layout)
 		instance:Destroy()
 	end
 
-	-- A gentle drift just past the beach shelf, easing new swimmers out toward
-	-- open water. Weak + no boost, so it's felt but never turns into a shortcut.
+	-- Every example follows the real relief: control points are lifted to
+	-- keep at least `clearance` studs of water over the seabed, so no
+	-- current runs through the seamount.
+	local function aboveGround(point: Vector3, clearance: number): Vector3
+		return Vector3.new(point.X, math.max(point.Y, layout:GroundHeight(point.X, point.Z) + clearance), point.Z)
+	end
+	local function onBearing(degrees: number, radius: number, y: number): Vector3
+		local a = math.rad(degrees)
+		return Vector3.new(math.cos(a) * radius, y, math.sin(a) * radius)
+	end
+
+	-- A gentle drift off the beach's south shelf, easing new swimmers out
+	-- over the reef wall. Weak + no boost: felt, never a shortcut.
 	exampleDirectional({
 		Name = "ReefDrift",
 		DisplayName = "Dérive du récif",
-		Position = Vector3.new(0, -15, -260),
+		Position = Vector3.new(0, -20, -300),
 		Direction = Vector3.new(0, 0, -1),
-		Length = 200,
+		Length = 160,
 		Width = 90,
-		Height = 40,
+		Height = 36,
 		Tier = "Weak",
 	})
 
-	-- A real fast lane across the open Récif: a multi-leg path that climbs,
-	-- turns, and dives, showing the trajectory system end to end.
+	-- A fast lane circling the island along the top of the reef wall.
+	local tourPoints = {}
+	for index, bearing in ipairs({ 195, 230, 265, 300, 335 }) do
+		table.insert(tourPoints, aboveGround(onBearing(bearing, 290, -52 - index * 3), 22))
+	end
 	examplePath({
 		Name = "RecifFastLane",
-		DisplayName = "Voie rapide du récif",
+		DisplayName = "Tour du tombant",
 		Tier = "FastLane",
 		Width = 14,
-		Points = {
-			Vector3.new(420, -45, 120),
-			Vector3.new(300, -40, 40),
-			Vector3.new(160, -55, -30),
-			Vector3.new(20, -80, -120),
-			Vector3.new(-120, -120, -180),
-		},
+		Points = tourPoints,
 	})
 
-	-- A strong corridor current deeper down (Grottes range), diagonal and
-	-- descending, the kind meant to eventually run through an actual canyon.
-	exampleDirectional({
-		Name = "GrottesCorridorCurrent",
-		DisplayName = "Couloir des grottes",
-		Position = Vector3.new(-200, -180, 300),
-		Direction = Vector3.new(1, -0.15, -1),
-		Length = 400,
-		Width = 45,
-		Height = 45,
+	-- The way down: from the reef crest, down the flank, to the terrace
+	-- where the wreck lies.
+	local descentPoints = {}
+	for _, step in ipairs({ { 62, 240, -45 }, { 62, 275, -115 }, { 60, 310, -185 }, { 58, 345, -245 }, { 57, 372, -285 } }) do
+		table.insert(descentPoints, aboveGround(onBearing(step[1], step[2], step[3]), 24))
+	end
+	examplePath({
+		Name = "DescenteDuTombant",
+		DisplayName = "Descente du tombant",
 		Tier = "Strong",
+		Width = 12,
+		Points = descentPoints,
 	})
 
-	-- The Épave vortex swirls in the open water just off the wreck's stern
-	-- (the anchor MegaWreckShip publishes from its real hull), never inside it.
-	local vortexPosition = layout:GetAnchor("WreckVortex") or Vector3.new(150, -300, -150)
+	-- The pull into the caves: open water in front of the Porche du Récif,
+	-- flowing into its mouth.
+	local caves = layout:GetAnchor("Caves")
+	if caves then
+		for _, entrance in ipairs(caves.entrances) do
+			if entrance.id == "Porche" then
+				examplePath({
+					Name = "CourantDesGrottes",
+					DisplayName = "Courant des grottes",
+					Tier = "Medium",
+					Width = 10,
+					Points = {
+						aboveGround(entrance.mouth - entrance.inward * 90 + Vector3.new(0, 6, 0), 14),
+						aboveGround(entrance.mouth - entrance.inward * 40 + Vector3.new(0, 2, 0), 10),
+						entrance.mouth + entrance.inward * 2,
+					},
+				})
+			end
+		end
+	end
+
+	-- The Épave vortex swirls in the open water just off the wreck's stern,
+	-- downslope (the anchor Shipwreck publishes from its real hull).
+	local vortexPosition = layout:GetAnchor("WreckVortex") or Vector3.new(420, -300, 300)
 	exampleCircular({
 		Name = "EpaveVortex",
 		DisplayName = "Tourbillon de l'épave",
 		Position = vortexPosition,
-		Radius = 70,
+		Radius = 60,
 		Spin = 1,
 		Tier = "Strong",
 	})
 
-	-- A smaller, calmer vortex near the surface as a second example of the
-	-- circular shape at a gentler strength.
+	-- A calmer eddy over the reef wall, west of the beach.
 	exampleCircular({
 		Name = "ShallowEddy",
 		DisplayName = "Remous peu profond",
-		Position = Vector3.new(-250, -40, -100),
+		Position = aboveGround(Vector3.new(-250, -40, -100), 20),
 		Radius = 35,
 		Spin = -1,
 		Tier = "Medium",
 	})
 
-	-- A vertical lift from the Épave range back up toward the Grottes -- the
-	-- quick way home after a deep dive. Stands just beyond the vortex's rim,
-	-- on the first bearing where the whole column is clear of the hull, the
-	-- mountains and the other currents.
-	local updraftTopY = -170
+	-- The quick way home after a deep dive: a column rising from beside the
+	-- vortex, on the first bearing where it is clear of the hull, the
+	-- seamount and the other currents.
+	local updraftTopY = -120
 	local updraftPoints = nil
 	for step = 0, 11 do
 		local angle = step * math.pi / 6
-		local base = vortexPosition + Vector3.new(math.cos(angle), 0, math.sin(angle)) * 105
-		local bottom = Vector3.new(base.X, vortexPosition.Y - 30, base.Z)
+		local base = vortexPosition + Vector3.new(math.cos(angle), 0, math.sin(angle)) * 95
+		local bottom = Vector3.new(base.X, vortexPosition.Y - 10, base.Z)
 		local top = Vector3.new(base.X, updraftTopY, base.Z)
 		if layout:IsSegmentFree(bottom, top, 14) then
-			updraftPoints = { bottom, bottom:Lerp(top, 0.5) + Vector3.new(2, 0, -2), top + Vector3.new(8, 0, -8) }
+			updraftPoints = { bottom, bottom:Lerp(top, 0.5) + Vector3.new(2, 0, -2), top + Vector3.new(6, 0, -6) }
 			break
 		end
 	end
@@ -611,6 +639,21 @@ function Currents.Build(layout)
 		})
 	else
 		warn("[Currents] no clear column found for EpaveUpdraft")
+	end
+
+	-- A strong flow along the floor of the abyssal rift.
+	local rift = layout:GetAnchor("RiftFrame")
+	if rift then
+		exampleDirectional({
+			Name = "CourantDeLaFaille",
+			DisplayName = "Courant de la faille",
+			Position = rift.center + Vector3.new(0, 26, 0),
+			Direction = rift.along,
+			Length = 340,
+			Width = 36,
+			Height = 24,
+			Tier = "Strong",
+		})
 	end
 
 	-- Decorate everything, hand-placed and generated alike (every visual is

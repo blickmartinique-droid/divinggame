@@ -98,6 +98,7 @@ local function buildWater(terrain: Terrain, maxDepth: number)
 	terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(150, 130, 100))
 	terrain:SetMaterialColor(Enum.Material.Mud, Color3.fromRGB(58, 52, 62))
 	terrain:SetMaterialColor(Enum.Material.Basalt, Color3.fromRGB(40, 38, 46))
+	terrain:SetMaterialColor(Enum.Material.Limestone, Color3.fromRGB(206, 196, 168))
 end
 
 -- Invisible walls just outside the water volume. Transparent parts never

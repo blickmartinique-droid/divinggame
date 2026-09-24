@@ -13,7 +13,7 @@ local Workspace = game:GetService("Workspace")
 local Builders = script.Parent.Builders
 local WorldLayout = require(Builders.WorldLayout)
 
-local ORDER = { "Ocean", "CaveRegions", "MegaWreckShip", "Currents", "BiomeDecor" }
+local ORDER = { "Ocean", "Seabed", "Caves", "Shipwreck", "Currents", "BiomeDecor" }
 
 Workspace:SetAttribute("WorldReady", false)
 
