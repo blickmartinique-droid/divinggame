@@ -11,6 +11,7 @@ suite is that tree + its assertions file, run with the `luau` CLI:
     python3 tests/build_tests.py
     luau tests/creature_test.lua
     luau tests/world_test.lua
+    luau tests/ui_test.lua
 
 The point is to actually EXECUTE the game code, not just lint it: past
 bugs in this project (a non-existent Enum member, a facing offset applied
@@ -53,7 +54,7 @@ for path, cls, file in mounts:
     lua_path = "{" + ", ".join(json.dumps(p) for p in path) + "}"
     tree.append("MOUNT(%s, %s, function(script)\n%s\nend)\n" % (lua_path, json.dumps(cls), file.read_text()))
 
-for suite in ("creature", "world"):
+for suite in ("creature", "world", "ui"):
     body = "\n".join(tree + [(HERE / f"{suite}_assertions.lua").read_text()])
     (HERE / f"{suite}_test.lua").write_text(body)
     print(f"built tests/{suite}_test.lua ({len(mounts)} scripts mounted)")

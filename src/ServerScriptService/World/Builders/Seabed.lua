@@ -40,7 +40,7 @@ local YIELD_EVERY = 2500
 -- Geography (bearings in degrees from +X toward +Z) ----------------------------------
 
 Seabed.WRECK_BEARING = 35
-Seabed.WRECK_DISTANCE = 372
+Seabed.WRECK_DISTANCE = 400
 Seabed.WRECK_DEPTH = -330
 Seabed.SPUR_BEARING = 155
 Seabed.RIFT_BEARING = 300
@@ -119,12 +119,12 @@ function Seabed.CreateHeightFunction(seed: number)
 		local dx, dz = x - wreckX, z - wreckZ
 		local radial = (dx * wreckX + dz * wreckZ) / Seabed.WRECK_DISTANCE
 		local tangent = (dx * -wreckZ + dz * wreckX) / Seabed.WRECK_DISTANCE
-		local ellipse = math.sqrt((tangent / 165) ^ 2 + (radial / 105) ^ 2)
+		local ellipse = math.sqrt((tangent / 265) ^ 2 + (radial / 145) ^ 2)
 		-- A wide blend band so the ledge eases into the slope below it (a
 		-- narrow one left a flat table standing on a cliff).
-		if ellipse < 2.1 then
+		if ellipse < 1.8 then
 			local shelf = Seabed.WRECK_DEPTH + detail:Fbm(x / 40, z / 40, 2) * 1.5
-			h += (shelf - h) * smoothstep(2.1, 0.8, ellipse)
+			h += (shelf - h) * smoothstep(1.8, 0.85, ellipse)
 		end
 
 		-- Abyssal rift: twin basalt ridges with a canyon between them.

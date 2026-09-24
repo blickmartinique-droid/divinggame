@@ -226,6 +226,10 @@ local function onAttack(brain, playerRoot: BasePart)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local player = character and Players:GetPlayerFromCharacter(character)
 	if humanoid and humanoid.Health > 0 then
+		if player and humanoid.Health <= brain.species.AttackDamage then
+			-- Read by the client's DeathScreen to say what happened.
+			player:SetAttribute("LastDeathCause", "Attaqué par : " .. brain.species.Name)
+		end
 		humanoid:TakeDamage(brain.species.AttackDamage)
 		creatureAttacked:Fire(player, brain.species.Id, brain.model)
 	end
@@ -363,10 +367,20 @@ local function populateRegion(region: BasePart)
 	local spawned = 0
 	while spawned < count do
 		local species = pickWeighted(candidates)
-		local position = SpawnRegions.RandomPointIn(region)
-		local depth = DepthUtils.GetDepth(position)
-		position = Vector3.new(position.X, DepthUtils.SURFACE_Y - math.clamp(depth, species.MinDepth, species.MaxDepth), position.Z)
-		spawned += spawnGroup(species, position, count - spawned, wanderRadius, region:GetAttribute("RegionUnderground") == true)
+		local underground = region:GetAttribute("RegionUnderground") == true
+		local ground = groundFunction(underground)
+		-- A region can overlap a slope: retry until the spot has water deep
+		-- enough for this species above the seabed.
+		local position
+		for _ = 1, 16 do
+			position = SpawnRegions.RandomPointIn(region)
+			local depth = DepthUtils.GetDepth(position)
+			position = Vector3.new(position.X, DepthUtils.SURFACE_Y - math.clamp(depth, species.MinDepth, species.MaxDepth), position.Z)
+			if not ground or ground(position.X, position.Z) + 3 <= DepthUtils.SURFACE_Y - species.MinDepth then
+				break
+			end
+		end
+		spawned += spawnGroup(species, position, count - spawned, wanderRadius, underground)
 	end
 end
 

@@ -44,6 +44,7 @@ local function onPlayerAdded(player: Player)
 	-- next dive.
 	player.CharacterAdded:Connect(function()
 		oxygenValue.Value = maxOxygenValue.Value
+		player:SetAttribute("LastDeathCause", nil)
 	end)
 end
 
@@ -55,6 +56,8 @@ local function drown(player: Player)
 	end
 
 	playerOutOfOxygen:Fire(player)
+	-- Read by the client's DeathScreen to say what happened.
+	player:SetAttribute("LastDeathCause", "Noyade : plus d'oxygène")
 	humanoid.Health = 0
 end
 

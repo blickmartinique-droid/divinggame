@@ -1,5 +1,5 @@
 -- Announces the current depth zone (Récif/Grottes/Épave/Entrée de l'abysse)
--- with a fade-in/out banner when the CHARACTER crosses into it, and
+-- with a sliding banner card when the CHARACTER crosses into it, and
 -- continuously blends the whole look of the water -- Lighting fog,
 -- brightness, ambient, exposure, Atmosphere (volume), ColorCorrection
 -- (saturation/contrast/tint) and SunRays (god rays) -- to match the
@@ -27,48 +27,86 @@ local GraphicsQuality = require(ReplicatedStorage.Shared.Modules.GraphicsQuality
 
 local player = Players.LocalPlayer
 
-local BANNER_FADE_IN = 0.6
-local BANNER_HOLD = 2
-local BANNER_FADE_OUT = 0.8
+local BANNER_IN = 0.55
+local BANNER_HOLD = 2.6
+local BANNER_OUT = 0.6
 local DEPTH_APPLY_EPSILON = 0.05
 
 -- Banner ------------------------------------------------------------------
+-- A glass card that drops in under the top edge: a small "ZONE n · depth
+-- range" eyebrow, the zone name in large letters, and an accent line in
+-- the zone's colour that draws itself from the centre outward.
+
+local UITheme = require(ReplicatedStorage.Shared.Modules.UITheme)
+local C, F = UITheme.Colors, UITheme.Fonts
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ZoneAnnouncer"
 screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 5
 screenGui.Parent = player:WaitForChild("PlayerGui")
+UITheme.AutoScale(screenGui)
 
-local label = Instance.new("TextLabel")
-label.Name = "ZoneLabel"
-label.AnchorPoint = Vector2.new(0.5, 0.5)
-label.Position = UDim2.new(0.5, 0, 0.35, 0)
-label.Size = UDim2.new(0, 500, 0, 60)
-label.BackgroundTransparency = 1
-label.Font = Enum.Font.GothamBold
-label.TextSize = 36
-label.TextColor3 = Color3.new(1, 1, 1)
-label.TextTransparency = 1
-label.Text = ""
-label.Parent = screenGui
+local HIDDEN_Y = UDim2.new(0.5, 0, 0, -120)
+local SHOWN_Y = UDim2.new(0.5, 0, 0, 96)
 
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.new(0, 0, 0)
-stroke.Thickness = 2
-stroke.Transparency = 1
-stroke.Parent = label
+local card = UITheme.Panel(screenGui, "ZoneCard", UDim2.fromOffset(380, 92), HIDDEN_Y, Vector2.new(0.5, 0))
+card.Visible = false
+local cardStroke = card:FindFirstChildOfClass("UIStroke") :: UIStroke
 
-local function announceZone(zone)
-	label.Text = zone.Name:upper()
-	label.TextTransparency = 1
-	stroke.Transparency = 1
+local eyebrow = UITheme.Label(card, "Eyebrow", "", F.Bold, 12, C.TextDim)
+eyebrow.TextXAlignment = Enum.TextXAlignment.Center
+eyebrow.Position = UDim2.fromOffset(0, 14)
 
-	TweenService:Create(label, TweenInfo.new(BANNER_FADE_IN), { TextTransparency = 0 }):Play()
-	TweenService:Create(stroke, TweenInfo.new(BANNER_FADE_IN), { Transparency = 0.5 }):Play()
+local title = UITheme.Label(card, "Title", "", F.Title, 34, C.Text)
+title.TextXAlignment = Enum.TextXAlignment.Center
+title.Position = UDim2.fromOffset(0, 32)
 
-	task.delay(BANNER_FADE_IN + BANNER_HOLD, function()
-		TweenService:Create(label, TweenInfo.new(BANNER_FADE_OUT), { TextTransparency = 1 }):Play()
-		TweenService:Create(stroke, TweenInfo.new(BANNER_FADE_OUT), { Transparency = 1 }):Play()
+local accent = Instance.new("Frame")
+accent.Name = "Accent"
+accent.AnchorPoint = Vector2.new(0.5, 1)
+accent.Position = UDim2.new(0.5, 0, 1, -10)
+accent.Size = UDim2.fromOffset(0, 3)
+accent.BorderSizePixel = 0
+accent.Parent = card
+UITheme.Corner(accent)
+
+local function zoneAccent(zone): Color3
+	return zone.FogColor:Lerp(Color3.new(1, 1, 1), 0.45)
+end
+
+local bannerToken = 0
+
+local function announceZone(zone, index: number)
+	bannerToken += 1
+	local token = bannerToken
+	local color = zoneAccent(zone)
+
+	eyebrow.Text = string.format("ZONE %d  ·  %d – %d m", index, zone.MinDepth, zone.MaxDepth)
+	title.Text = zone.Name:upper()
+	accent.BackgroundColor3 = color
+	accent.Size = UDim2.fromOffset(0, 3)
+	cardStroke.Color = color
+	card.Position = HIDDEN_Y
+	card.Visible = true
+
+	TweenService:Create(card, TweenInfo.new(BANNER_IN, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = SHOWN_Y }):Play()
+	TweenService:Create(accent, TweenInfo.new(BANNER_IN + 0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Size = UDim2.fromOffset(220, 3),
+	}):Play()
+
+	task.delay(BANNER_IN + BANNER_HOLD, function()
+		if token ~= bannerToken then
+			return
+		end
+		local out = TweenService:Create(card, TweenInfo.new(BANNER_OUT, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Position = HIDDEN_Y })
+		out:Play()
+		out.Completed:Connect(function()
+			if token == bannerToken then
+				card.Visible = false
+			end
+		end)
 	end)
 end
 
@@ -184,7 +222,7 @@ RunService.Heartbeat:Connect(function()
 		local zone = DepthUtils.GetZoneForDepth(depth)
 		if zone.Name ~= currentZoneName then
 			currentZoneName = zone.Name
-			announceZone(zone)
+			announceZone(zone, table.find(ZonesConfig.Zones, zone) or 1)
 		end
 	else
 		currentZoneName = nil

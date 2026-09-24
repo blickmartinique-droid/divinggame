@@ -323,19 +323,24 @@ function CreatureBodies.Build(species, options): Model
 	return model
 end
 
--- A tiny decorative fish for client-side ambient shoals (no joints, no
--- welds -- the client moves it as one anchored part group).
-function CreatureBodies.BuildSmallFish(length: number, variant: number): Model
+-- A tiny decorative fish for client-side ambient shoals: anchored parts,
+-- moved by the client as a whole. `tint` (optional) replaces the reef
+-- palette -- silver for mid-water, a glowing blue for the abyss.
+function CreatureBodies.BuildSmallFish(length: number, variant: number, tint: Color3?, glow: boolean?): Model
 	local model = Instance.new("Model")
 	local palette = REEF_PALETTES[(variant - 1) % #REEF_PALETTES + 1]
-	local body = ellipsoid(model, "Body", Vector3.new(length * 0.22, length * 0.4, length * 0.7), CFrame.new(0, 0, -length * 0.08), palette.body)
-	local tail = ellipsoid(model, "Tail", Vector3.new(0.06, length * 0.36, length * 0.28), CFrame.new(0, 0, length * 0.36), palette.fin)
-	if palette.bands > 0 then
-		local band = ellipsoid(model, "Band", Vector3.new(length * 0.24, length * 0.36, length * 0.08), CFrame.new(0, 0, -length * 0.12), palette.band)
-		band.Anchored = true
+	local bodyColor = tint or palette.body
+	local finColor = tint and tint:Lerp(Color3.new(1, 1, 1), 0.25) or palette.fin
+	local material = glow and Enum.Material.Neon or Enum.Material.SmoothPlastic
+	local body = ellipsoid(model, "Body", Vector3.new(length * 0.22, length * 0.4, length * 0.7), CFrame.new(0, 0, -length * 0.08), bodyColor, material)
+	local tail = ellipsoid(model, "Tail", Vector3.new(0.06, length * 0.36, length * 0.28), CFrame.new(0, 0, length * 0.36), finColor, material)
+	local parts = { body, tail }
+	if not tint and palette.bands > 0 then
+		table.insert(parts, ellipsoid(model, "Band", Vector3.new(length * 0.24, length * 0.36, length * 0.1), CFrame.new(0, 0, -length * 0.12), palette.band))
 	end
-	for _, part in ipairs({ body, tail }) do
+	for _, part in ipairs(parts) do
 		part.Anchored = true
+		part.Massless = false
 	end
 	model.PrimaryPart = body
 	return model

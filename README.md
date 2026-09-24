@@ -41,7 +41,8 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   100–250 Grottes, 250–400 Épave, 400–500 Entrée de l'abysse), chacune avec ses
   propres réglages de brouillard/luminosité. `ZoneAnnouncer.client.lua` interpole
   ces réglages en continu selon la profondeur réelle du joueur (pas de saut
-  brutal aux limites de zone) et affiche une bannière au changement de zone.
+  brutal aux limites de zone) et fait descendre une carte « ZONE n · plage
+  de profondeur » au changement de zone, soulignée à la couleur de la zone.
 - **Ambiance sous-marine** — `UnderwaterAmbience.client.lua` : sédiments et
   bulles d'ambiance très discrets, suivant le joueur, actifs uniquement sous
   l'eau.
@@ -62,11 +63,22 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   emplacements ; chaque zone de profondeur est complétée en pleine eau
   jusqu'à 15 trésors minimum, hors des volumes réservés. Rareté croissante
   avec la profondeur.
-- **UI de gameplay** — `GameplayHUD.client.lua` : profondeur, barre d'oxygène,
-  nom de la zone actuelle (les trois valeurs viennent des systèmes serveur
-  ci-dessus, cette UI ne fait qu'afficher).
-- **Écran de mort** — `DeathScreen.client.lua` : overlay flou + message,
-  déclenché actuellement par la noyade, prêt pour toute future source de dégâts.
+- **Interface** — un seul langage visuel (`UITheme.lua` : panneaux « verre »
+  sombres translucides, coins arrondis, liseré fin, une couleur par sens —
+  cyan oxygène, or butin, rouge danger — et mise à l'échelle automatique
+  selon l'écran, du téléphone au 4K). `GameplayHUD.client.lua` : **jauge de
+  profondeur verticale** à gauche peinte aux couleurs des 4 zones, avec un
+  curseur qui glisse et la profondeur + le nom de zone ; **capsule
+  d'oxygène** en bas au centre (secondes restantes, dégradé, contour rouge
+  qui pulse sous 25 %, vignette rouge et « ↑ REMONTE À LA SURFACE ») ;
+  **pièces** (compteur qui défile) et **sac** en haut à droite ; **cartes de
+  notification** qui glissent à chaque trésor (barre à la couleur de la
+  rareté), vente ou perte ; **puce de courant** en haut au centre (nom + force).
+  L'UI ne fait qu'afficher les valeurs serveur.
+- **Écran de mort** — `DeathScreen.client.lua` : flou + voile rouge, carte
+  qui indique la **cause** (attribut `LastDeathCause` posé par le serveur :
+  noyade, ou l'espèce qui a porté le dernier coup), la profondeur max de la
+  plongée, le butin perdu, et une barre de réapparition.
 
 - **Courants sous-marins** — trois formes (`Directional` : boîte orientée,
   `Circular` : vortex, `Path` : chemin à nœuds `CurrentPoint_01..N` — droit,
@@ -112,7 +124,8 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   roche, vase et basalte au fond) et strates d'ardoise sur les falaises.
   `layout:GroundHeight` sert à tout poser sur le vrai sol.
 - **Épave : « La Sirène Noire »** — `Builders/Shipwreck.lua`, un galion à
-  trois mâts (~190 studs) posé sur la terrasse, gîte vers l'aval et ensablé.
+  trois mâts géant (~380 studs de long, 92 de large, grand mât de 170)
+  posé sur la terrasse, gîte vers l'aval et ensablé.
   Coque réellement courbe, bordée planche par planche (surface paramétrique
   échantillonnée en stations × virures), cale, pont des canons avec canons
   aux sabords, pont principal effondré autour du grand mât brisé, gaillard
@@ -124,7 +137,10 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   grand mât gît sur le sable avec sa voile, ancre et cargaison dispersées.
   Butin : cale, pont des canons, cabine ; requins et méduses autour.
 - **Grottes de l'Éperon** — `Builders/Caves.lua`, un réseau creusé dans
-  l'éperon : **Porche du Récif** (~118 m) → **Salle des Cristaux** (géode de
+  l'éperon. Accès le plus simple : le **Trou Bleu**, un puits qui s'ouvre
+  directement au bord du lagon et plonge vers la Salle des Cristaux. Chaque
+  entrée est signalée par un anneau de perles lumineuses, une lumière et un
+  panneau « ⛰ nom » visible de loin. Réseau : **Porche du Récif** (~118 m) → **Salle des Cristaux** (géode de
   cristaux lumineux) → **La Cathédrale** (~185 m, piliers de roche, puits de
   lumière du jour tombant d'une cheminée, autel ancien et idole) → sortie
   **Fenêtre** ; → **Grotte aux Méduses** (~312 m, bassin bioluminescent) →
@@ -136,7 +152,14 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   bénitiers, herbiers, kelp), gorgones et éponges sur le tombant, **forêt de
   kelp géant** sur le flanc ouest, **cheminées hydrothermales** fumantes
   avec vers tubicoles et roche en fusion dans la faille, plumes de mer et
-  éponges de verre sur la plaine. Plantes animées par `FloraAnimator.client.lua`.
+  éponges de verre sur la plaine, **jardins de corail** sur les flancs,
+  champs d'anémones, **kelp doré** sur le flanc est, crinoïdes. Plantes
+  animées par `FloraAnimator.client.lua`. Faune : régions de créatures dans
+  chaque biome (poissons et tortues au lagon, tortues et raies dans les
+  jardins et le kelp, raies et requins en pleine eau, méduses sur la plaine
+  abyssale et dans la faille), plus des **bancs de poissons d'ambiance**
+  (`AmbientFish.client.lua`, purement visuels, côté client, nombre selon la
+  qualité graphique) qui suivent le relief et s'égaillent devant le plongeur.
 
 ### Intégration du mapping et des assets (Blender / Studio)
 
@@ -231,7 +254,8 @@ erreur comme dans Studio, le Terrain enregistre chaque remplissage) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 81 vérifications
+luau tests/world_test.lua      # 84 vérifications
+luau tests/ui_test.lua         # 31 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
@@ -246,6 +270,9 @@ luau tests/world_test.lua      # 81 vérifications
   chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné ;
   15 trésors minimum par zone, aucun trésor ni créature dans la roche, les
   5 espèces présentes.
+- `ui_test` : lance le HUD, l'annonceur de zone et l'écran de mort avec un
+  faux joueur local et les fait vivre une plongée (profondeur, oxygène bas,
+  trésor, vente, mort, réapparition) en vérifiant ce qu'ils affichent.
 
 Analyse statique en complément, avec les types Roblox :
 `luau-lsp analyze --definitions=globalTypes.d.luau --sourcemap=sourcemap.json src`

@@ -2,6 +2,8 @@
 -- the seamount's north-west flank (Seabed.lua raises the spur). One route
 -- from the reef down into the dark, with a side exit:
 --
+--   Trou Bleu (~35 m): a blue hole opening right at the edge of the
+--     lagoon, visible from the beach, dropping into the Salle des Cristaux
 --   Porche du Récif (~118 m, north face)
 --     -> Salle des Cristaux (~128 m): a geode of glowing crystals
 --     -> La Cathédrale (~185 m): a vast hall with rock pillars, lit by a
@@ -36,13 +38,15 @@ local CHAMBERS = {
 -- Control points (along, across, y) and radius; the first/last points of
 -- entry tunnels lie outside the rock, in open water.
 local TUNNELS = {
-	{ id = "Porche", radius = 10, points = { { 245, 100, -116 }, { 250, 60, -120 }, { 262, 25, -126 }, { 270, -5, -128 } } },
+	{ id = "TrouBleu", radius = 13, points = { { 204, 0, -28 }, { 207, 0, -60 }, { 222, -4, -94 }, { 250, -5, -118 }, { 270, -5, -128 } } },
+	{ id = "Porche", radius = 14, points = { { 245, 100, -116 }, { 250, 60, -120 }, { 262, 25, -126 }, { 270, -5, -128 } } },
 	{ id = "CristauxCathedrale", radius = 9, points = { { 270, -5, -128 }, { 300, 20, -148 }, { 335, -15, -170 }, { 365, 5, -185 } } },
-	{ id = "Fenetre", radius = 9, points = { { 365, 5, -188 }, { 378, -40, -190 }, { 384, -80, -192 }, { 388, -112, -193 } } },
+	{ id = "Fenetre", radius = 12, points = { { 365, 5, -188 }, { 378, -40, -190 }, { 384, -80, -192 }, { 388, -112, -193 } } },
 	{ id = "CathedraleMeduses", radius = 9, points = { { 365, 5, -190 }, { 400, 25, -222 }, { 430, -20, -265 }, { 455, 10, -295 }, { 470, -10, -312 } } },
-	{ id = "SortieAbysses", radius = 10, points = { { 470, -10, -314 }, { 488, -60, -320 }, { 498, -110, -324 }, { 503, -145, -326 } } },
+	{ id = "SortieAbysses", radius = 14, points = { { 470, -10, -314 }, { 488, -60, -320 }, { 498, -110, -324 }, { 503, -145, -326 } } },
 }
 local ENTRANCES = {
+	{ id = "TrouBleu", name = "Trou Bleu", tunnel = "TrouBleu", at = 1 },
 	{ id = "Porche", name = "Porche du Récif", tunnel = "Porche", at = 1 },
 	{ id = "Fenetre", name = "Fenêtre", tunnel = "Fenetre", at = 4 },
 	{ id = "SortieAbysses", name = "Sortie des Abysses", tunnel = "SortieAbysses", at = 4 },
@@ -413,7 +417,33 @@ function Caves.Build(layout)
 		marker:SetAttribute("DisplayName", entrance.name)
 		local glow = part(decor, "EntranceGlow", Vector3.new(0.6, 0.6, 0.6), CFrame.new(mouth + inward * 14), Enum.Material.Neon, GLOW_BLUE)
 		glow.Transparency = 1
-		light(glow, GLOW_BLUE, 26, 0.9)
+		light(glow, GLOW_BLUE, 40, 1.4)
+		-- A ring of glowing algae around the mouth: a cave entrance reads
+		-- from far away in the blue, not only once you bump into it.
+		local ringFrame = CFrame.lookAt(mouth + inward * 3, mouth + inward * 10)
+		local ringRadius = tunnel.spec.radius + 1
+		for k = 1, 14 do
+			local angle = k / 14 * math.pi * 2
+			local bead = part(decor, "EntranceRing", Vector3.new(1.2, 1.2, 1.2), ringFrame * CFrame.new(math.cos(angle) * ringRadius, math.sin(angle) * ringRadius, 0), Enum.Material.Neon, GLOW_BLUE)
+			bead.Shape = Enum.PartType.Ball
+		end
+		-- And a floating sign, readable from a distance.
+		local sign = Instance.new("BillboardGui")
+		sign.Name = "EntranceSign"
+		sign.Size = UDim2.new(0, 240, 0, 44)
+		sign.StudsOffset = Vector3.new(0, tunnel.spec.radius + 6, 0)
+		sign.MaxDistance = 320
+		sign.LightInfluence = 0
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.TextScaled = true
+		label.TextColor3 = Color3.fromRGB(170, 240, 255)
+		label.TextStrokeTransparency = 0.3
+		label.Text = "⛰ " .. entrance.name
+		label.Parent = sign
+		sign.Parent = marker
 		table.insert(entrances, { id = entrance.id, name = entrance.name, mouth = mouth, inward = inward })
 	end
 

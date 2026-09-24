@@ -26,16 +26,20 @@ local CollectionService = game:GetService("CollectionService")
 
 local Shipwreck = {}
 
-local LENGTH = 190
-local BEAM = 50
-local DEPTH = 30 -- keel baseline to the main deck at the sides
-local STATIONS = 24
-local STRAKES = 9
-local PLANK = 1.2
+-- A first-rate: big enough to explore for a while, decks tall enough to
+-- swim through comfortably.
+local LENGTH = 380
+local BEAM = 92
+local DEPTH = 56 -- keel baseline to the main deck at the sides
+local STATIONS = 36
+local STRAKES = 12
+local PLANK = 1.6
+local CABIN_HEIGHT = 20
+local FOREMAST, MAINMAST, MIZZEN = 140, 170, 116
 local HOLD_T, GUN_T = 0.18, 0.55
 local LIST = math.rad(9) -- roll toward the downslope side
 local TRIM = math.rad(1.5)
-local SINK = 4 -- how deep the keel sits in the sand
+local SINK = 6 -- how deep the keel sits in the sand
 
 local WOOD = Color3.fromRGB(96, 78, 60)
 local WOOD_DARK = Color3.fromRGB(66, 52, 40)
@@ -57,11 +61,11 @@ local function halfBeamAtDeck(s: number): number
 end
 
 local function keelY(s: number): number
-	return 7 * math.max(0, (0.22 - s) / 0.22) ^ 2 + 3 * math.max(0, (s - 0.86) / 0.14) ^ 2
+	return 14 * math.max(0, (0.22 - s) / 0.22) ^ 2 + 6 * math.max(0, (s - 0.86) / 0.14) ^ 2
 end
 
 local function deckY(s: number): number
-	return DEPTH + 4 * ((s - 0.5) * 2) ^ 2
+	return DEPTH + 8 * ((s - 0.5) * 2) ^ 2
 end
 
 local function stationZ(s: number): number
@@ -78,6 +82,15 @@ end
 
 local function halfWidthAt(s: number, t: number): number
 	return halfBeamAtDeck(s) * t ^ 0.55
+end
+
+-- Station / strake index nearest a fraction of the length / height, so
+-- every feature below keeps its place whatever the resolution.
+local function st(fraction: number): number
+	return math.floor(fraction * STATIONS + 0.5)
+end
+local function sk(fraction: number): number
+	return math.floor(fraction * STRAKES + 0.5)
 end
 
 -- Build ------------------------------------------------------------------------------------
@@ -159,12 +172,17 @@ function Shipwreck.Build(layout)
 
 	-- 1. Hull planking, with gunports and the two breaches left open.
 	local GUNPORT_STRAKE = math.floor(GUN_T * STRAKES + 0.5)
-	local gunports = { [7] = true, [9] = true, [11] = true, [13] = true, [15] = true, [17] = true }
+	local gunports = {}
+	for i = st(0.28), st(0.74), 2 do
+		gunports[i] = true
+	end
+	local BREACH_I0, BREACH_I1, BREACH_J1 = st(0.4), st(0.56), sk(0.45)
+	local HOLE_I0, HOLE_I1 = st(0.66), st(0.72)
 	local function isOpen(side: number, i: number, j: number): boolean
-		if side < 0 and i >= 10 and i <= 13 and j >= 1 and j <= 4 then
+		if side < 0 and i >= BREACH_I0 and i <= BREACH_I1 and j >= 1 and j <= BREACH_J1 then
 			return true -- the great breach, port side, into the hold
 		end
-		if side > 0 and i >= 16 and i <= 17 and j >= 5 and j <= 6 then
+		if side > 0 and i >= HOLE_I0 and i <= HOLE_I1 and j >= sk(0.56) and j <= sk(0.72) then
 			return true -- a smaller hole, starboard, into the gun deck
 		end
 		return j == GUNPORT_STRAKE and gunports[i] == true
@@ -180,8 +198,8 @@ function Shipwreck.Build(layout)
 					-- little along it, algae-green toward the keel.
 					local strakeTone = ((j * 37) % 7) / 7
 					local base = WOOD:Lerp(WOOD_DARK, strakeTone * 0.6)
-					if j < 3 then
-						base = base:Lerp(WOOD_ALGAE, 0.75 - j * 0.2)
+					if j < sk(0.3) then
+						base = base:Lerp(WOOD_ALGAE, 0.75 - j / STRAKES * 2)
 					end
 					local color = base:Lerp(WOOD_DARK, rng:NextNumber() * 0.18)
 					local plank = plankFor("Hull", "Plank", hullPoint(s0, t0, side), hullPoint(s1, t0, side), hullPoint(s0, t1, side), hullPoint(s1, t1, side), color)
@@ -200,44 +218,45 @@ function Shipwreck.Build(layout)
 		local t0 = math.min(j / STRAKES, 1)
 		local y0 = keelY(sternS) + (deckY(sternS) - keelY(sternS)) * t0
 		local halfWidth = halfWidthAt(sternS, math.min(t0 + 1 / STRAKES, 1))
-		local y = j <= STRAKES and y0 or deckY(sternS) + (j - STRAKES) * 3.4
+		local rowHeight = CABIN_HEIGHT / 3
+		local y = j <= STRAKES and y0 or deckY(sternS) + (j - STRAKES - 1) * rowHeight
 		if j <= STRAKES then
 			shipPart("Hull", "Transom", Vector3.new(halfWidth * 2, (deckY(sternS) - keelY(sternS)) / STRAKES + 0.3, PLANK), CFrame.new(0, y + 1.6, LENGTH / 2), Enum.Material.WoodPlanks, WOOD_DARK)
 		elseif j ~= STRAKES + 2 then
-			shipPart("Cabin", "Transom", Vector3.new(halfWidth * 2, 3.5, PLANK), CFrame.new(0, y + 1.7, LENGTH / 2), Enum.Material.WoodPlanks, WOOD_DARK)
+			shipPart("Cabin", "Transom", Vector3.new(halfWidth * 2, rowHeight + 0.2, PLANK), CFrame.new(0, y + rowHeight / 2, LENGTH / 2), Enum.Material.WoodPlanks, WOOD_DARK)
 		else
-			for w = -2, 2 do
-				shipPart("Cabin", "WindowMullion", Vector3.new(1, 3.5, PLANK + 0.4), CFrame.new(w * 7, y + 1.7, LENGTH / 2), Enum.Material.Wood, WOOD_DARK)
+			for w = -3, 3 do
+				shipPart("Cabin", "WindowMullion", Vector3.new(1.4, rowHeight + 0.2, PLANK + 0.4), CFrame.new(w * halfWidth / 3.5, y + rowHeight / 2, LENGTH / 2), Enum.Material.Wood, WOOD_DARK)
 			end
 		end
 	end
 
 	-- Ribs showing through the port breach.
-	for i = 10, 14 do
+	for i = BREACH_I0, BREACH_I1 + 1 do
 		local s = i / STATIONS
-		for j = 0, 4 do
+		for j = 0, BREACH_J1 do
 			local a = hullPoint(s, j / STRAKES, -1) + Vector3.new(1.4, 0, 0)
 			local b = hullPoint(s, (j + 1) / STRAKES, -1) + Vector3.new(1.4, 0, 0)
 			local mid, dir = (a + b) / 2, (b - a)
-			shipPart("Hull", "Rib", Vector3.new(1.6, dir.Magnitude + 0.6, 1.6), CFrame.lookAt(mid, mid + Vector3.new(0, 0, 1), dir.Unit), Enum.Material.Wood, WOOD_DARK)
+			shipPart("Hull", "Rib", Vector3.new(2.4, dir.Magnitude + 0.6, 2.4), CFrame.lookAt(mid, mid + Vector3.new(0, 0, 1), dir.Unit), Enum.Material.Wood, WOOD_DARK)
 		end
 	end
 	-- Splintered plank ends around the breach.
-	for _ = 1, 10 do
-		local s = (9.6 + rng:NextNumber() * 4.8) / STATIONS
-		local t = (0.6 + rng:NextNumber() * 4) / STRAKES
+	for _ = 1, 18 do
+		local s = (BREACH_I0 - 0.4 + rng:NextNumber() * (BREACH_I1 - BREACH_I0 + 1.8)) / STATIONS
+		local t = (0.6 + rng:NextNumber() * BREACH_J1) / STRAKES
 		local at = hullPoint(s, t, -1)
-		shipPart("Hull", "Splinter", Vector3.new(0.9, 0.5, 2 + rng:NextNumber() * 5), CFrame.new(at) * CFrame.Angles(rng:NextNumber() - 0.5, rng:NextNumber() * 3, rng:NextNumber() - 0.5), Enum.Material.WoodPlanks, WOOD, false)
+		shipPart("Hull", "Splinter", Vector3.new(1.4, 0.8, 4 + rng:NextNumber() * 8), CFrame.new(at) * CFrame.Angles(rng:NextNumber() - 0.5, rng:NextNumber() * 3, rng:NextNumber() - 0.5), Enum.Material.WoodPlanks, WOOD, false)
 	end
 
 	-- Keel and stem.
 	for i = 0, STATIONS - 1 do
 		local a, b = hullPoint(i / STATIONS, 0, 1), hullPoint((i + 1) / STATIONS, 0, 1)
 		local mid = (a + b) / 2
-		shipPart("Hull", "Keel", Vector3.new(2.4, 3, (b - a).Magnitude + 0.4), CFrame.lookAt(mid - Vector3.new(0, 1, 0), mid - Vector3.new(0, 1, 0) + (b - a)), Enum.Material.Wood, WOOD_DARK)
+		shipPart("Hull", "Keel", Vector3.new(4, 5, (b - a).Magnitude + 0.4), CFrame.lookAt(mid - Vector3.new(0, 1.5, 0), mid - Vector3.new(0, 1.5, 0) + (b - a)), Enum.Material.Wood, WOOD_DARK)
 	end
-	local stemBottom, stemTop = hullPoint(0, 0, 1), Vector3.new(0, deckY(0) + 6, -LENGTH / 2 - 6)
-	shipPart("Hull", "Stem", Vector3.new(2.4, (stemTop - stemBottom).Magnitude, 2.4), CFrame.lookAt((stemBottom + stemTop) / 2, (stemBottom + stemTop) / 2 + Vector3.new(0, 0, -1), (stemTop - stemBottom).Unit), Enum.Material.Wood, WOOD_DARK)
+	local stemBottom, stemTop = hullPoint(0, 0, 1), Vector3.new(0, deckY(0) + 12, -LENGTH / 2 - 12)
+	shipPart("Hull", "Stem", Vector3.new(4, (stemTop - stemBottom).Magnitude, 2.4), CFrame.lookAt((stemBottom + stemTop) / 2, (stemBottom + stemTop) / 2 + Vector3.new(0, 0, -1), (stemTop - stemBottom).Unit), Enum.Material.Wood, WOOD_DARK)
 
 	-- 2. Decks: one slab per station, following the hull's width.
 	local function deckSlab(folder: string, name: string, i: number, t: number, lift: number, color: Color3)
@@ -246,19 +265,19 @@ function Shipwreck.Build(layout)
 		local y = keelY(s) + (deckY(s) - keelY(s)) * t + lift
 		local width = math.min(halfWidthAt(s0, t), halfWidthAt(s1, t)) * 2 - 0.6
 		if width > 2 then
-			shipPart(folder, name, Vector3.new(width, 1, LENGTH / STATIONS + 0.3), CFrame.new(0, y, stationZ(s)), Enum.Material.WoodPlanks, color)
+			shipPart(folder, name, Vector3.new(width, 1.5, LENGTH / STATIONS + 0.3), CFrame.new(0, y, stationZ(s)), Enum.Material.WoodPlanks, color)
 		end
 	end
 	for i = 2, STATIONS - 2 do
 		deckSlab("Decks", "HoldFloor", i, HOLD_T, 0, WOOD_DARK)
 	end
 	for i = 2, STATIONS - 1 do
-		if i ~= 8 and i ~= 15 then -- two open hatches down into the hold
+		if i ~= st(0.33) and i ~= st(0.62) then -- two open hatches down into the hold
 			deckSlab("Decks", "GunDeck", i, GUN_T, 0, WOOD)
 		end
 	end
 	for i = 1, STATIONS - 1 do
-		if not (i >= 11 and i <= 13) and i ~= 5 then -- collapsed around the mainmast, and the main hatch
+		if not (i >= st(0.45) and i <= st(0.55)) and i ~= st(0.21) then -- collapsed around the mainmast, and the main hatch
 			deckSlab("Decks", "MainDeck", i, 1, -0.5, WOOD)
 		end
 	end
@@ -267,15 +286,16 @@ function Shipwreck.Build(layout)
 		for i = 1, STATIONS - 1 do
 			local s = (i + 0.5) / STATIONS
 			local edge = hullPoint(s, 1, side)
-			shipPart("Hull", "Bulwark", Vector3.new(0.8, 3.2, LENGTH / STATIONS + 0.3), CFrame.new(edge + Vector3.new(-side * 0.4, 1.6, 0)), Enum.Material.WoodPlanks, WOOD_DARK)
+			shipPart("Hull", "Bulwark", Vector3.new(1.2, 5, LENGTH / STATIONS + 0.3), CFrame.new(edge + Vector3.new(-side * 0.6, 2.5, 0)), Enum.Material.WoodPlanks, WOOD_DARK)
 		end
 	end
 
 	-- 3. Captain's cabin under the poop deck (stations 19-23), forecastle.
-	local cabinFront = stationZ(19 / STATIONS)
+	local CABIN_I = st(0.8)
+	local cabinFront = stationZ(CABIN_I / STATIONS)
 	local cabinDeckY = deckY(0.9)
-	local cabinHeight = 12
-	for i = 19, STATIONS - 1 do
+	local cabinHeight = CABIN_HEIGHT
+	for i = CABIN_I, STATIONS - 1 do
 		local s = (i + 0.5) / STATIONS
 		local halfWidth = halfWidthAt(s, 1) - 0.8
 		for _, side in ipairs({ -1, 1 }) do
@@ -283,17 +303,18 @@ function Shipwreck.Build(layout)
 		end
 		deckSlab("Cabin", "PoopDeck", i, 1, cabinHeight, WOOD)
 	end
-	local frontHalf = halfWidthAt(19 / STATIONS, 1) - 0.8
+	local frontHalf = halfWidthAt(CABIN_I / STATIONS, 1) - 0.8
 	for _, side in ipairs({ -1, 1 }) do
-		-- Front wall with a doorway in the middle.
-		shipPart("Cabin", "CabinFront", Vector3.new(frontHalf - 4, cabinHeight, 0.8), CFrame.new(side * (4 + (frontHalf - 4) / 2), cabinDeckY + cabinHeight / 2, cabinFront), Enum.Material.WoodPlanks, WOOD_DARK)
+		-- Front wall with a wide doorway in the middle.
+		shipPart("Cabin", "CabinFront", Vector3.new(frontHalf - 7, cabinHeight, 1.2), CFrame.new(side * (7 + (frontHalf - 7) / 2), cabinDeckY + cabinHeight / 2, cabinFront), Enum.Material.WoodPlanks, WOOD_DARK)
 	end
-	shipPart("Cabin", "CabinLintel", Vector3.new(8, 3, 0.8), CFrame.new(0, cabinDeckY + cabinHeight - 1.5, cabinFront), Enum.Material.WoodPlanks, WOOD_DARK)
-	local foreHalf = halfWidthAt(3.5 / STATIONS, 1) - 0.8
-	for i = 1, 3 do
-		deckSlab("Decks", "Forecastle", i, 1, 6, WOOD)
+	shipPart("Cabin", "CabinLintel", Vector3.new(14, 5, 1.2), CFrame.new(0, cabinDeckY + cabinHeight - 2.5, cabinFront), Enum.Material.WoodPlanks, WOOD_DARK)
+	local FORE_I = st(0.13)
+	local foreHalf = halfWidthAt((FORE_I + 0.5) / STATIONS, 1) - 0.8
+	for i = 1, FORE_I do
+		deckSlab("Decks", "Forecastle", i, 1, 12, WOOD)
 	end
-	shipPart("Decks", "ForecastleWall", Vector3.new(foreHalf * 2, 6, 0.8), CFrame.new(0, deckY(4 / STATIONS) + 3, stationZ(4 / STATIONS)), Enum.Material.WoodPlanks, WOOD_DARK)
+	shipPart("Decks", "ForecastleWall", Vector3.new(foreHalf * 2, 12, 1.2), CFrame.new(0, deckY((FORE_I + 1) / STATIONS) + 6, stationZ((FORE_I + 1) / STATIONS)), Enum.Material.WoodPlanks, WOOD_DARK)
 
 	-- Cabin furniture: the captain's table, a toppled chair, a chest, a lantern.
 	local cabinCenter = Vector3.new(0, cabinDeckY, stationZ(0.9))
@@ -329,8 +350,8 @@ function Shipwreck.Build(layout)
 
 	-- 5. Cargo in the hold: crates and barrels, some toppled.
 	local holdY = keelY(0.5) + (deckY(0.5) - keelY(0.5)) * HOLD_T + 0.5
-	for _ = 1, 22 do
-		local s = 0.25 + rng:NextNumber() * 0.5
+	for _ = 1, 50 do
+		local s = 0.22 + rng:NextNumber() * 0.54
 		local x = (rng:NextNumber() - 0.5) * (halfWidthAt(s, HOLD_T) * 2 - 8)
 		local z = stationZ(s)
 		if rng:NextNumber() < 0.5 then
@@ -347,19 +368,19 @@ function Shipwreck.Build(layout)
 		local deck = deckY(s)
 		local base = Vector3.new(0, keelY(s) + 2, stationZ(s))
 		local standing = brokenAt or height
-		local lower = shipPart("Rigging", "Mast", Vector3.new(standing + deck - base.Y, 3.2, 3.2),
+		local lower = shipPart("Rigging", "Mast", Vector3.new(standing + deck - base.Y, 5.5, 5.5),
 			CFrame.new(base + Vector3.new(0, (standing + deck - base.Y) / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.Wood, WOOD)
 		lower.Shape = Enum.PartType.Cylinder
 		if brokenAt then
 			-- A jagged stump.
-			shipPart("Rigging", "Splinter", Vector3.new(1.4, 4, 1.2), CFrame.new(0, deck + brokenAt + 1.5, stationZ(s) + 0.6) * CFrame.Angles(0.3, 0, 0.2), Enum.Material.Wood, WOOD, false)
+			shipPart("Rigging", "Splinter", Vector3.new(2.4, 7, 2), CFrame.new(0, deck + brokenAt + 2.5, stationZ(s) + 1) * CFrame.Angles(0.3, 0, 0.2), Enum.Material.Wood, WOOD, false)
 			return nil
 		end
 		local top = Vector3.new(0, deck + height, stationZ(s))
-		shipPart("Rigging", "Top", Vector3.new(9, 0.8, 9), CFrame.new(top - Vector3.new(0, height * 0.38, 0)), Enum.Material.WoodPlanks, WOOD_DARK)
+		shipPart("Rigging", "Top", Vector3.new(16, 1.4, 16), CFrame.new(top - Vector3.new(0, height * 0.38, 0)), Enum.Material.WoodPlanks, WOOD_DARK)
 		for k, yardHeight in ipairs({ 0.3, 0.62, 0.9 }) do
-			local span = 38 - k * 7
-			local yard = shipPart("Rigging", "Yard", Vector3.new(span, 1.4, 1.4), CFrame.new(0, deck + height * yardHeight, stationZ(s) + 1.5) * CFrame.Angles(0, 0.08 * k, 0), Enum.Material.Wood, WOOD)
+			local span = 76 - k * 14
+			local yard = shipPart("Rigging", "Yard", Vector3.new(span, 2.4, 2.4), CFrame.new(0, deck + height * yardHeight, stationZ(s) + 2.5) * CFrame.Angles(0, 0.08 * k, 0), Enum.Material.Wood, WOOD)
 			yard.Shape = Enum.PartType.Cylinder
 			-- Torn sail hanging from the lower two yards, in ragged strips.
 			if k < 3 then
@@ -367,8 +388,8 @@ function Shipwreck.Build(layout)
 				for strip = -2, 2 do
 					if rng:NextNumber() > 0.3 then
 						local stripDrop = drop * (0.4 + rng:NextNumber() * 0.6)
-						local sail = shipPart("Rigging", "Sail", Vector3.new(span / 5 - 0.6, stripDrop, 0.3),
-							CFrame.new(strip * span / 5, deck + height * yardHeight - stripDrop / 2, stationZ(s) + 2.4) * CFrame.Angles(0.12 + rng:NextNumber() * 0.15, 0, (rng:NextNumber() - 0.5) * 0.12), Enum.Material.Fabric, SAIL, false)
+						local sail = shipPart("Rigging", "Sail", Vector3.new(span / 5 - 0.8, stripDrop, 0.4),
+							CFrame.new(strip * span / 5, deck + height * yardHeight - stripDrop / 2, stationZ(s) + 4) * CFrame.Angles(0.12 + rng:NextNumber() * 0.15, 0, (rng:NextNumber() - 0.5) * 0.12), Enum.Material.Fabric, SAIL, false)
 						sail.Transparency = 0.15
 					end
 				end
@@ -377,24 +398,24 @@ function Shipwreck.Build(layout)
 		for _, side in ipairs({ -1, 1 }) do
 			for k = -1, 1 do
 				local low = hullPoint(s + k * 0.02, 1, side) + Vector3.new(0, 2, 0)
-				local high = top - Vector3.new(0, height * 0.38, 0) + Vector3.new(side * 4, 0, 0)
+				local high = top - Vector3.new(0, height * 0.38, 0) + Vector3.new(side * 7, 0, 0)
 				local mid = (low + high) / 2
-				shipPart("Rigging", "Shroud", Vector3.new(0.3, (high - low).Magnitude, 0.3), CFrame.lookAt(mid, mid + Vector3.new(0, 0, 1), (high - low).Unit), Enum.Material.Fabric, Color3.fromRGB(70, 64, 52), false)
+				shipPart("Rigging", "Shroud", Vector3.new(0.45, (high - low).Magnitude, 0.45), CFrame.lookAt(mid, mid + Vector3.new(0, 0, 1), (high - low).Unit), Enum.Material.Fabric, Color3.fromRGB(70, 64, 52), false)
 			end
 		end
 		return top
 	end
-	mast(0.22, 70) -- foremast, still standing
-	mast(0.5, 85, 22) -- mainmast, snapped
-	mast(0.78, 58, 26) -- mizzen, broken
+	mast(0.22, FOREMAST) -- foremast, still standing
+	mast(0.5, MAINMAST, 44) -- mainmast, snapped
+	mast(0.78, MIZZEN, 52) -- mizzen, broken
 	-- Bowsprit and figurehead.
-	local sprit = shipPart("Rigging", "Bowsprit", Vector3.new(42, 2.2, 2.2), CFrame.new(0, deckY(0) + 12, -LENGTH / 2 - 14) * CFrame.Angles(0, math.pi / 2, 0) * CFrame.Angles(0, 0, math.rad(28)), Enum.Material.Wood, WOOD)
+	local sprit = shipPart("Rigging", "Bowsprit", Vector3.new(84, 4, 4), CFrame.new(0, deckY(0) + 24, -LENGTH / 2 - 28) * CFrame.Angles(0, math.pi / 2, 0) * CFrame.Angles(0, 0, math.rad(28)), Enum.Material.Wood, WOOD)
 	sprit.Shape = Enum.PartType.Cylinder
-	local figure = shipPart("Hull", "Figurehead", Vector3.new(2.6, 6, 2.2), CFrame.new(0, deckY(0) - 2, -LENGTH / 2 - 5) * CFrame.Angles(math.rad(-30), 0, 0), Enum.Material.Metal, BRASS, false)
+	local figure = shipPart("Hull", "Figurehead", Vector3.new(5, 12, 4.4), CFrame.new(0, deckY(0) - 4, -LENGTH / 2 - 10) * CFrame.Angles(math.rad(-30), 0, 0), Enum.Material.Metal, BRASS, false)
 	local figureMesh = Instance.new("SpecialMesh")
 	figureMesh.MeshType = Enum.MeshType.Sphere
 	figureMesh.Parent = figure
-	shipPart("Hull", "Rudder", Vector3.new(1.4, 24, 8), CFrame.new(0, 12, LENGTH / 2 + 4), Enum.Material.WoodPlanks, WOOD_DARK)
+	shipPart("Hull", "Rudder", Vector3.new(2.4, 48, 14), CFrame.new(0, 24, LENGTH / 2 + 7), Enum.Material.WoodPlanks, WOOD_DARK)
 
 	-- 7. Life: growth on the hull and deck, kelp, seaweed on the yards.
 	-- Encrusting life: flat patches hugging the planks (not balls stuck on
@@ -402,11 +423,11 @@ function Shipwreck.Build(layout)
 	local GROWTH_COLORS = { Color3.fromRGB(150, 84, 70), Color3.fromRGB(170, 120, 70), Color3.fromRGB(120, 86, 120), Color3.fromRGB(96, 120, 96), Color3.fromRGB(150, 146, 132) }
 	local lowQuads = {}
 	for _, quad in ipairs(hullQuads) do
-		if quad.j <= 4 or rng:NextNumber() < 0.25 then
+		if quad.j <= sk(0.45) or rng:NextNumber() < 0.25 then
 			table.insert(lowQuads, quad)
 		end
 	end
-	for _ = 1, 90 do
+	for _ = 1, 240 do
 		local quad = lowQuads[rng:NextInteger(1, #lowQuads)]
 		local plank = quad.plank
 		-- The plank's face normal, flipped to point out of the hull.
@@ -434,10 +455,10 @@ function Shipwreck.Build(layout)
 		mesh.Parent = growth
 		growth.Parent = folders.Growth
 	end
-	for _ = 1, 16 do
+	for _ = 1, 40 do
 		local s = 0.08 + rng:NextNumber() * 0.7
-		if not (s > 11 / STATIONS and s < 14 / STATIONS) then
-			local height = 8 + rng:NextNumber() * 12
+		if not (s > 0.44 and s < 0.56) then
+			local height = 10 + rng:NextNumber() * 18
 			local x = (rng:NextNumber() - 0.5) * (halfWidthAt(s, 1) * 2 - 6)
 			local kelp = shipPart("Growth", "Kelp", Vector3.new(0.6, height, 0.6), CFrame.new(x, deckY(s) + height / 2, stationZ(s)) * CFrame.Angles((rng:NextNumber() - 0.5) * 0.2, 0, (rng:NextNumber() - 0.5) * 0.2), Enum.Material.Grass, Color3.fromRGB(64, 128, 58), false)
 			kelp:SetAttribute("SwayAmplitude", 0.1)
@@ -448,7 +469,7 @@ function Shipwreck.Build(layout)
 
 	-- 8. Inner glow: bioluminescent specks in the hold and on the gun deck,
 	-- brighter by the breach so it reads as a way in.
-	for _ = 1, 26 do
+	for _ = 1, 70 do
 		local s = 0.2 + rng:NextNumber() * 0.6
 		local t = rng:NextNumber() < 0.5 and HOLD_T or GUN_T
 		local side = rng:NextNumber() < 0.5 and -1 or 1
@@ -456,12 +477,12 @@ function Shipwreck.Build(layout)
 		local speck = shipPart("Lights", "Bioluminescence", Vector3.new(0.35, 0.35, 0.35), CFrame.new(wall), Enum.Material.Neon, GLOW, false)
 		speck.Shape = Enum.PartType.Ball
 	end
-	local breachCenter = hullPoint(11.5 / STATIONS, 2.5 / STRAKES, -1)
+	local breachCenter = hullPoint((BREACH_I0 + BREACH_I1 + 1) / 2 / STATIONS, BREACH_J1 * 0.55 / STRAKES, -1)
 	local breachGlow = shipPart("Lights", "BreachGlow", Vector3.new(0.5, 0.5, 0.5), CFrame.new(breachCenter + Vector3.new(6, 0, 0)), Enum.Material.Neon, GLOW, false)
 	breachGlow.Transparency = 1
 	local glowLight = Instance.new("PointLight")
 	glowLight.Color = GLOW
-	glowLight.Range = 30
+	glowLight.Range = 50
 	glowLight.Brightness = 1
 	glowLight.Parent = breachGlow
 
@@ -469,15 +490,34 @@ function Shipwreck.Build(layout)
 	-- collapsed main deck, the cabin door.
 	local entries = {
 		Breach = breachCenter - Vector3.new(4, 0, 0),
-		StarboardHole = hullPoint(17 / STATIONS, 5.5 / STRAKES, 1) + Vector3.new(4, 0, 0),
+		StarboardHole = hullPoint((HOLE_I0 + HOLE_I1 + 1) / 2 / STATIONS, (sk(0.56) + sk(0.72) + 1) / 2 / STRAKES, 1) + Vector3.new(6, 0, 0),
 		CollapsedDeck = Vector3.new(0, deckY(0.5) + 6, stationZ(0.5)),
-		CabinDoor = Vector3.new(0, cabinDeckY + 4, cabinFront - 4),
+		CabinDoor = Vector3.new(0, cabinDeckY + 6, cabinFront - 8),
 	}
 	local entryWorld = {}
 	for name, localPoint in pairs(entries) do
 		local marker = shipPart("EntryPoints", "EntryPoint_" .. name, Vector3.new(1, 1, 1), CFrame.new(localPoint), Enum.Material.SmoothPlastic, Color3.new(1, 1, 1), false)
 		marker.Transparency = 1
 		entryWorld[name] = marker.Position
+		if name == "CollapsedDeck" then
+			-- A floating name over the wreck, readable from the slope above.
+			local sign = Instance.new("BillboardGui")
+			sign.Name = "WreckSign"
+			sign.Size = UDim2.new(0, 280, 0, 48)
+			sign.StudsOffset = Vector3.new(0, 30, 0)
+			sign.MaxDistance = 450
+			sign.LightInfluence = 0
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, 0, 1, 0)
+			label.BackgroundTransparency = 1
+			label.Font = Enum.Font.GothamBold
+			label.TextScaled = true
+			label.TextColor3 = Color3.fromRGB(255, 220, 150)
+			label.TextStrokeTransparency = 0.3
+			label.Text = "⚓ La Sirène Noire"
+			label.Parent = sign
+			sign.Parent = marker
+		end
 	end
 
 	-- 9. Debris field on the terrace, resting on the real seabed.
@@ -504,24 +544,24 @@ function Shipwreck.Build(layout)
 	-- The mainmast's broken top, lying beside the port side with its yard
 	-- and a sail draped over the sand.
 	local portSide = shipCFrame.RightVector * -1
-	local fallenAt = center + portSide * 58 + forward * 10
+	local fallenAt = center + portSide * 110 + forward * 20
 	local fallenDir = (forward + portSide * 0.35).Unit
 	local fallenBase = onGround(fallenAt.X, fallenAt.Z, 1.4)
 	-- (A Cylinder's axis is its X; turning the look frame 90 degrees about Y
 	-- lays that axis along fallenDir.)
-	debrisPart("FallenMast", Vector3.new(60, 2.8, 2.8), fallenBase, CFrame.lookAt(Vector3.zero, fallenDir) * CFrame.Angles(0, math.pi / 2, 0), Enum.Material.Wood, WOOD, Enum.PartType.Cylinder)
-	local yardAt = fallenBase + fallenDir * 18
-	debrisPart("FallenYard", Vector3.new(34, 1.4, 1.4), onGround(yardAt.X, yardAt.Z, 1.2), CFrame.lookAt(Vector3.zero, fallenDir:Cross(Vector3.new(0, 1, 0))) * CFrame.Angles(0, math.pi / 2, 0), Enum.Material.Wood, WOOD, Enum.PartType.Cylinder)
-	local drape = debrisPart("DrapedSail", Vector3.new(26, 0.3, 18), onGround(yardAt.X + fallenDir.X * 10, yardAt.Z + fallenDir.Z * 10, 0.6), CFrame.lookAt(Vector3.zero, fallenDir) * CFrame.Angles(0.06, 0, 0.05), Enum.Material.Fabric, SAIL)
+	debrisPart("FallenMast", Vector3.new(120, 5.5, 5.5), fallenBase, CFrame.lookAt(Vector3.zero, fallenDir) * CFrame.Angles(0, math.pi / 2, 0), Enum.Material.Wood, WOOD, Enum.PartType.Cylinder)
+	local yardAt = fallenBase + fallenDir * 36
+	debrisPart("FallenYard", Vector3.new(66, 2.4, 2.4), onGround(yardAt.X, yardAt.Z, 1.8), CFrame.lookAt(Vector3.zero, fallenDir:Cross(Vector3.new(0, 1, 0))) * CFrame.Angles(0, math.pi / 2, 0), Enum.Material.Wood, WOOD, Enum.PartType.Cylinder)
+	local drape = debrisPart("DrapedSail", Vector3.new(52, 0.4, 34), onGround(yardAt.X + fallenDir.X * 20, yardAt.Z + fallenDir.Z * 20, 0.8), CFrame.lookAt(Vector3.zero, fallenDir) * CFrame.Angles(0.06, 0, 0.05), Enum.Material.Fabric, SAIL)
 	drape.CanCollide = false
 	-- Anchor, half buried off the bow.
-	local anchorAt = onGround(center.X + forward.X * 125 + portSide.X * 20, center.Z + forward.Z * 125 + portSide.Z * 20, 3)
-	debrisPart("AnchorShank", Vector3.new(1.4, 14, 1.4), anchorAt, CFrame.Angles(0.4, 0.8, 0.9), Enum.Material.CorrodedMetal, IRON)
-	debrisPart("AnchorArms", Vector3.new(10, 1.4, 1.4), anchorAt - Vector3.new(0, 4, 0), CFrame.Angles(0.4, 0.8, 0.2), Enum.Material.CorrodedMetal, IRON)
+	local anchorAt = onGround(center.X + forward.X * 240 + portSide.X * 40, center.Z + forward.Z * 240 + portSide.Z * 40, 6)
+	debrisPart("AnchorShank", Vector3.new(2.8, 28, 2.8), anchorAt, CFrame.Angles(0.4, 0.8, 0.9), Enum.Material.CorrodedMetal, IRON)
+	debrisPart("AnchorArms", Vector3.new(20, 2.8, 2.8), anchorAt - Vector3.new(0, 8, 0), CFrame.Angles(0.4, 0.8, 0.2), Enum.Material.CorrodedMetal, IRON)
 	-- Scattered cargo.
-	for _ = 1, 28 do
+	for _ = 1, 70 do
 		local angle = rng:NextNumber() * math.pi * 2
-		local distance = 40 + rng:NextNumber() * 80
+		local distance = 70 + rng:NextNumber() * 160
 		local x = center.X + math.cos(angle) * distance
 		local z = center.Z + math.sin(angle) * distance
 		local ground = onGround(x, z, 0)
@@ -547,8 +587,8 @@ function Shipwreck.Build(layout)
 		local s = i / STATIONS
 		for _, side in ipairs({ -1, 1 }) do
 			-- Kept outside the planking so no bank spills into the hold.
-			local bank = toWorld(Vector3.new(side * (halfWidthAt(s, 0.3) + 9), 2, stationZ(s)))
-			terrain:FillBall(Vector3.new(bank.X, layout:GroundHeight(bank.X, bank.Z) + 1, bank.Z), 6 + rng:NextNumber() * 2, Enum.Material.Sand)
+			local bank = toWorld(Vector3.new(side * (halfWidthAt(s, 0.3) + 14), 2, stationZ(s)))
+			terrain:FillBall(Vector3.new(bank.X, layout:GroundHeight(bank.X, bank.Z) + 1, bank.Z), 9 + rng:NextNumber() * 3, Enum.Material.Sand)
 		end
 	end
 
@@ -566,9 +606,9 @@ function Shipwreck.Build(layout)
 	end
 	local holdCenterY = keelY(0.5) + (deckY(0.5) - keelY(0.5)) * HOLD_T + 4
 	local gunCenterY = keelY(0.5) + (deckY(0.5) - keelY(0.5)) * GUN_T + 4
-	region("Loot_Hold", Vector3.new(0, holdCenterY, stationZ(0.5)), Vector3.new(BEAM * 0.5, 4, LENGTH * 0.4), "Treasure", { RegionCount = 5 })
-	region("Loot_GunDeck", Vector3.new(0, gunCenterY, stationZ(0.5)), Vector3.new(BEAM * 0.4, 4, LENGTH * 0.45), "Treasure", { RegionCount = 3 })
-	region("Loot_CaptainsCabin", Vector3.new(0, cabinDeckY + 3, stationZ(0.9)), Vector3.new(BEAM * 0.45, 3, LENGTH * 0.14), "Treasure", { RegionCount = 4 })
+	region("Loot_Hold", Vector3.new(0, holdCenterY, stationZ(0.5)), Vector3.new(BEAM * 0.5, 4, LENGTH * 0.4), "Treasure", { RegionCount = 9 })
+	region("Loot_GunDeck", Vector3.new(0, gunCenterY, stationZ(0.5)), Vector3.new(BEAM * 0.4, 4, LENGTH * 0.45), "Treasure", { RegionCount = 5 })
+	region("Loot_CaptainsCabin", Vector3.new(0, cabinDeckY + 3, stationZ(0.9)), Vector3.new(BEAM * 0.45, 3, LENGTH * 0.14), "Treasure", { RegionCount = 5 })
 	local creatureRegion = Instance.new("Part")
 	creatureRegion.Name = "Creatures_AroundWreck"
 	creatureRegion.Anchored = true
@@ -581,19 +621,19 @@ function Shipwreck.Build(layout)
 	creatureRegion.CFrame = CFrame.new(center + Vector3.new(0, 22, 0))
 	creatureRegion:SetAttribute("RegionKind", "Creature")
 	creatureRegion:SetAttribute("RegionEnabled", true)
-	creatureRegion:SetAttribute("RegionCount", 6)
+	creatureRegion:SetAttribute("RegionCount", 10)
 	creatureRegion:SetAttribute("RegionSpecies", "RequinRecif,MeduseLumineuse")
 	creatureRegion.Parent = folders.SpawnRegions
 	CollectionService:AddTag(creatureRegion, "SpawnRegion")
 
 	-- Layout: the ship's volume (hull + standing foremast), and open
 	-- water off her stern, downslope, for the Épave vortex.
-	local mastTop = deckY(0.22) + 70
-	layout:ReserveBox("Shipwreck", shipCFrame * CFrame.new(0, mastTop / 2 - 2, 0), Vector3.new(BEAM + 16, mastTop + 6, LENGTH + 50))
+	local mastTop = deckY(0.22) + FOREMAST
+	layout:ReserveBox("Shipwreck", shipCFrame * CFrame.new(0, mastTop / 2 - 2, -20), Vector3.new(BEAM + 24, mastTop + 6, LENGTH + 110))
 	layout:SetAnchor("WreckCFrame", shipCFrame)
 	layout:SetAnchor("WreckEntries", entryWorld)
 	local stern = toWorld(Vector3.new(0, 0, LENGTH / 2))
-	layout:SetAnchor("WreckVortex", Vector3.new(stern.X, site.position.Y + 34, stern.Z) + site.outward * 70 + forward * -30)
+	layout:SetAnchor("WreckVortex", Vector3.new(stern.X, site.position.Y + 40, stern.Z) + site.outward * 120 + forward * -50)
 
 	print(string.format("[Shipwreck] La Sirène Noire: %d parts", #root:GetDescendants()))
 end

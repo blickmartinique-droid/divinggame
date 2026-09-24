@@ -1,359 +1,348 @@
--- Minimal gameplay HUD: oxygen, depth, and current zone name. Purely a
--- display layer -- it holds no game logic of its own, and reuses the
--- systems that already own each value instead of recomputing them:
---   * Depth: DepthTracker.server.lua (authoritative), replicated to the
---     client as the player's Depth NumberValue.
---   * Oxygen: OxygenManager.server.lua (authoritative), replicated as
---     Oxygen / MaxOxygen. MaxOxygen is a per-player value (not the
---     OxygenConfig constant) specifically so future equipment (Bouteille)
---     can raise or lower it per player -- this bar reads whatever that
---     value currently is, so equipping better gear later needs no UI
---     change at all.
---   * Zone: DepthUtils.GetZoneForDepth, the same shared pure function
---     ZoneAnnouncer's big banner and the server both use, applied to the
---     same replicated Depth value read above (no separate depth source).
+-- The diving HUD. A display layer only: every value comes from the server
+-- systems that own it (Depth from DepthTracker, Oxygen/MaxOxygen/
+-- OxygenDrainPerSecond from OxygenManager, the bag and Pièces from
+-- PlayerInventory, loot events on ReplicatedStorage.LootEvent, the
+-- current from CurrentField).
 --
--- Replaces the earlier DepthDebugUI stand-in.
+--   * left: a vertical depth gauge 0-500 m painted with the zones, a
+--     marker gliding down it with the depth and zone name;
+--   * bottom centre: the oxygen capsule, seconds of air left, turning red
+--     and pulsing when low -- with a red vignette and a "surface" cue;
+--   * top right: Pièces and the bag, numbers rolling to their new value,
+--     and loot cards sliding in below them (rarity-coloured);
+--   * top centre: the current you are in, when you are in one.
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local OxygenConfig = require(ReplicatedStorage.Shared.Config.OxygenConfig)
+local UITheme = require(ReplicatedStorage.Shared.Modules.UITheme)
+local ZonesConfig = require(ReplicatedStorage.Shared.Config.ZonesConfig)
 local DepthUtils = require(ReplicatedStorage.Shared.Modules.DepthUtils)
 local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local player = Players.LocalPlayer
+local C = UITheme.Colors
+local F = UITheme.Fonts
 
-local ACCENT_COLOR = Color3.fromRGB(80, 200, 255)
-local OXYGEN_LOW_COLOR = Color3.fromRGB(255, 80, 70)
-local LOW_OXYGEN_THRESHOLD = 0.25
-
--- Zone label: briefly emphasized (bigger, fully opaque) when entering a new
--- zone, then settles into a smaller, more transparent resting style so it
--- stays readable without competing for attention -- separate from
--- ZoneAnnouncer's big banner, which fades all the way to invisible instead.
-local ZONE_EMPHASIS_SIZE = 16
-local ZONE_REST_SIZE = 13
-local ZONE_REST_TRANSPARENCY = 0.35
-local ZONE_EMPHASIS_HOLD = 1.4
-local ZONE_SETTLE_TIME = 0.5
+local LOW_OXYGEN = 0.25
+local MAX_DEPTH = ZonesConfig.MaxDepth
+local GAUGE_HEIGHT = 340
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GameplayHUD"
 screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = player:WaitForChild("PlayerGui")
+UITheme.AutoScale(screenGui)
 
-local container = Instance.new("Frame")
-container.Name = "HudContainer"
-container.AnchorPoint = Vector2.new(0, 0)
-container.Position = UDim2.new(0, 20, 0, 20)
-container.Size = UDim2.new(0, 220, 0, 0)
-container.AutomaticSize = Enum.AutomaticSize.Y
-container.BackgroundColor3 = Color3.fromRGB(10, 20, 28)
-container.BackgroundTransparency = 0.25
-container.BorderSizePixel = 0
-container.Parent = screenGui
+local function tween(instance: Instance, time: number, goal, style: Enum.EasingStyle?)
+	local t = TweenService:Create(instance, TweenInfo.new(time, style or Enum.EasingStyle.Quint, Enum.EasingDirection.Out), goal)
+	t:Play()
+	return t
+end
 
-local containerCorner = Instance.new("UICorner")
-containerCorner.CornerRadius = UDim.new(0, 16)
-containerCorner.Parent = container
+-- Depth gauge ---------------------------------------------------------------------------
 
-local containerStroke = Instance.new("UIStroke")
-containerStroke.Color = Color3.fromRGB(255, 255, 255)
-containerStroke.Transparency = 0.85
-containerStroke.Thickness = 1
-containerStroke.Parent = container
+local gauge = UITheme.Panel(screenGui, "DepthGauge", UDim2.fromOffset(46, GAUGE_HEIGHT + 56), UDim2.new(0, 22, 0.5, 0), Vector2.new(0, 0.5))
+local surfaceMark = UITheme.Label(gauge, "Surface", "0", F.Bold, 11, C.TextDim)
+surfaceMark.Position = UDim2.fromOffset(0, 8)
+surfaceMark.TextXAlignment = Enum.TextXAlignment.Center
+local bottomMark = UITheme.Label(gauge, "Bottom", tostring(MAX_DEPTH), F.Bold, 11, C.TextDim)
+bottomMark.Position = UDim2.new(0, 0, 1, -22)
+bottomMark.TextXAlignment = Enum.TextXAlignment.Center
 
-local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0, 14)
-padding.PaddingBottom = UDim.new(0, 14)
-padding.PaddingLeft = UDim.new(0, 16)
-padding.PaddingRight = UDim.new(0, 16)
-padding.Parent = container
+local track = Instance.new("Frame")
+track.Name = "Track"
+track.Size = UDim2.fromOffset(8, GAUGE_HEIGHT)
+track.Position = UDim2.new(0.5, 0, 0, 28)
+track.AnchorPoint = Vector2.new(0.5, 0)
+track.BackgroundTransparency = 1
+track.Parent = gauge
+for index, zone in ipairs(ZonesConfig.Zones) do
+	local segment = Instance.new("Frame")
+	segment.Name = zone.Name
+	segment.Position = UDim2.new(0, 0, zone.MinDepth / MAX_DEPTH, index > 1 and 2 or 0)
+	segment.Size = UDim2.new(1, 0, (zone.MaxDepth - zone.MinDepth) / MAX_DEPTH, index > 1 and -2 or 0)
+	segment.BackgroundColor3 = zone.FogColor:Lerp(Color3.new(1, 1, 1), 0.35)
+	segment.BorderSizePixel = 0
+	segment.Parent = track
+	UITheme.Corner(segment, 4)
+end
 
-local layout = Instance.new("UIListLayout")
-layout.FillDirection = Enum.FillDirection.Vertical
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Padding = UDim.new(0, 8)
-layout.Parent = container
+-- The marker (and its readout) slides along the track.
+local marker = Instance.new("Frame")
+marker.Name = "Marker"
+marker.Size = UDim2.fromOffset(18, 18)
+marker.AnchorPoint = Vector2.new(0.5, 0.5)
+marker.Position = UDim2.new(0.5, 0, 0, 0)
+marker.BackgroundColor3 = C.Text
+marker.Rotation = 45
+marker.Parent = track
+UITheme.Corner(marker, 4)
+UITheme.Stroke(marker, 0.2, C.Glass)
 
-local zoneLabel = Instance.new("TextLabel")
-zoneLabel.Name = "ZoneLabel"
-zoneLabel.LayoutOrder = 1
-zoneLabel.Size = UDim2.new(1, 0, 0, 18)
-zoneLabel.BackgroundTransparency = 1
-zoneLabel.TextXAlignment = Enum.TextXAlignment.Left
-zoneLabel.Font = Enum.Font.GothamBold
-zoneLabel.TextSize = ZONE_REST_SIZE
-zoneLabel.TextColor3 = ACCENT_COLOR
-zoneLabel.TextTransparency = ZONE_REST_TRANSPARENCY
-zoneLabel.Text = "📍 SURFACE"
-zoneLabel.Parent = container
+local readout = UITheme.Panel(screenGui, "DepthReadout", UDim2.fromOffset(150, 52), UDim2.fromOffset(0, 0), Vector2.new(0, 0.5))
+UITheme.Padding(readout, 12, 6)
+local depthText = UITheme.Label(readout, "Depth", "0 m", F.Title, 22)
+local zoneText = UITheme.Label(readout, "Zone", "SURFACE", F.Bold, 11, C.Oxygen)
+zoneText.Position = UDim2.fromOffset(0, 24)
 
-local depthLabel = Instance.new("TextLabel")
-depthLabel.Name = "DepthLabel"
-depthLabel.LayoutOrder = 2
-depthLabel.Size = UDim2.new(1, 0, 0, 26)
-depthLabel.BackgroundTransparency = 1
-depthLabel.TextXAlignment = Enum.TextXAlignment.Left
-depthLabel.Font = Enum.Font.GothamBold
-depthLabel.TextSize = 22
-depthLabel.TextColor3 = Color3.fromRGB(235, 245, 250)
-depthLabel.Text = "📏 0 m"
-depthLabel.Parent = container
+-- Oxygen capsule ---------------------------------------------------------------------------
 
-local oxygenBarBackground = Instance.new("Frame")
-oxygenBarBackground.Name = "OxygenBarBackground"
-oxygenBarBackground.LayoutOrder = 3
-oxygenBarBackground.Size = UDim2.new(1, 0, 0, 20)
-oxygenBarBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-oxygenBarBackground.BackgroundTransparency = 0.4
-oxygenBarBackground.BorderSizePixel = 0
-oxygenBarBackground.Parent = container
+local oxygenPanel = UITheme.Panel(screenGui, "Oxygen", UDim2.fromOffset(400, 62), UDim2.new(0.5, 0, 1, -26), Vector2.new(0.5, 1))
+UITheme.Padding(oxygenPanel, 16, 10)
+local oxygenTitle = UITheme.Label(oxygenPanel, "Title", "OXYGÈNE", F.Bold, 12, C.TextDim)
+local oxygenTime = UITheme.Label(oxygenPanel, "Seconds", "-- s", F.Title, 16)
+oxygenTime.TextXAlignment = Enum.TextXAlignment.Right
+local barTrack = Instance.new("Frame")
+barTrack.Name = "BarTrack"
+barTrack.Size = UDim2.new(1, 0, 0, 12)
+barTrack.Position = UDim2.new(0, 0, 1, -12)
+barTrack.BackgroundColor3 = Color3.new(0, 0, 0)
+barTrack.BackgroundTransparency = 0.45
+barTrack.Parent = oxygenPanel
+UITheme.Corner(barTrack)
+local barFill = Instance.new("Frame")
+barFill.Name = "Fill"
+barFill.Size = UDim2.fromScale(1, 1)
+barFill.BackgroundColor3 = Color3.new(1, 1, 1)
+barFill.Parent = barTrack
+UITheme.Corner(barFill)
+local barGradient = Instance.new("UIGradient")
+barGradient.Color = ColorSequence.new(C.Oxygen, C.OxygenDeep)
+barGradient.Parent = barFill
+local oxygenStroke = UITheme.Stroke(oxygenPanel, 1, C.Danger)
+oxygenStroke.Thickness = 2
 
-local oxygenBarBackgroundCorner = Instance.new("UICorner")
-oxygenBarBackgroundCorner.CornerRadius = UDim.new(1, 0)
-oxygenBarBackgroundCorner.Parent = oxygenBarBackground
+-- Low-oxygen vignette: four soft red edges.
+local vignette = Instance.new("Frame")
+vignette.Name = "Vignette"
+vignette.Size = UDim2.fromScale(1, 1)
+vignette.BackgroundTransparency = 1
+vignette.ZIndex = 0
+vignette.Parent = screenGui
+local edges = {}
+for _, edge in ipairs({
+	{ UDim2.fromScale(1, 0.22), UDim2.fromScale(0, 0), 90 },
+	{ UDim2.fromScale(1, 0.22), UDim2.fromScale(0, 0.78), -90 },
+	{ UDim2.fromScale(0.16, 1), UDim2.fromScale(0, 0), 0 },
+	{ UDim2.fromScale(0.16, 1), UDim2.fromScale(0.84, 0), 180 },
+}) do
+	local frame = Instance.new("Frame")
+	frame.Size = edge[1]
+	frame.Position = edge[2]
+	frame.BackgroundColor3 = C.Danger
+	frame.BorderSizePixel = 0
+	frame.Parent = vignette
+	local gradient = Instance.new("UIGradient")
+	gradient.Rotation = edge[3]
+	gradient.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1) })
+	gradient.Parent = frame
+	table.insert(edges, frame)
+end
+local surfaceHint = UITheme.Label(screenGui, "SurfaceHint", "↑  REMONTE À LA SURFACE", F.Title, 20, C.Danger)
+surfaceHint.Size = UDim2.fromOffset(420, 28)
+surfaceHint.AnchorPoint = Vector2.new(0.5, 1)
+surfaceHint.Position = UDim2.new(0.5, 0, 1, -100)
+surfaceHint.TextXAlignment = Enum.TextXAlignment.Center
+surfaceHint.TextStrokeTransparency = 0.4
+surfaceHint.Visible = false
 
-local oxygenBarFill = Instance.new("Frame")
-oxygenBarFill.Name = "OxygenBarFill"
-oxygenBarFill.Size = UDim2.new(1, 0, 1, 0)
-oxygenBarFill.BackgroundColor3 = ACCENT_COLOR
-oxygenBarFill.BorderSizePixel = 0
-oxygenBarFill.Parent = oxygenBarBackground
+-- Wallet and bag -------------------------------------------------------------------------------
 
-local oxygenBarFillCorner = Instance.new("UICorner")
-oxygenBarFillCorner.CornerRadius = UDim.new(1, 0)
-oxygenBarFillCorner.Parent = oxygenBarFill
+local rightColumn = Instance.new("Frame")
+rightColumn.Name = "RightColumn"
+rightColumn.BackgroundTransparency = 1
+rightColumn.Size = UDim2.fromOffset(300, 600)
+rightColumn.AnchorPoint = Vector2.new(1, 0)
+rightColumn.Position = UDim2.new(1, -22, 0, 22)
+rightColumn.Parent = screenGui
+local rightLayout = Instance.new("UIListLayout")
+rightLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
+rightLayout.Padding = UDim.new(0, 8)
+rightLayout.Parent = rightColumn
 
--- Low-oxygen alert: a soft red outline that pulses (rather than a static
--- color change alone) so it reads as an active warning, not just a tint.
-local oxygenBarStroke = Instance.new("UIStroke")
-oxygenBarStroke.Color = OXYGEN_LOW_COLOR
-oxygenBarStroke.Thickness = 1.5
-oxygenBarStroke.Transparency = 1
-oxygenBarStroke.Parent = oxygenBarBackground
+local function chip(order: number, icon: string, accent: Color3)
+	local frame = UITheme.Panel(rightColumn, "Chip" .. order, UDim2.fromOffset(190, 42), UDim2.new(), nil)
+	frame.LayoutOrder = order
+	UITheme.Padding(frame, 12, 0)
+	local iconLabel = UITheme.Label(frame, "Icon", icon, F.Bold, 20, accent)
+	iconLabel.Size = UDim2.new(0, 28, 1, 0)
+	local value = UITheme.Label(frame, "Value", "0", F.Title, 18)
+	value.Size = UDim2.new(1, -32, 1, 0)
+	value.Position = UDim2.fromOffset(32, 0)
+	value.TextXAlignment = Enum.TextXAlignment.Right
+	return frame, value
+end
+local coinsChip, coinsLabel = chip(1, "◉", C.Gold)
+local bagChip, bagLabel = chip(2, "▣", C.Oxygen)
 
-local oxygenCaption = Instance.new("TextLabel")
-oxygenCaption.Name = "OxygenCaption"
-oxygenCaption.LayoutOrder = 4
-oxygenCaption.Size = UDim2.new(1, 0, 0, 14)
-oxygenCaption.BackgroundTransparency = 1
-oxygenCaption.TextXAlignment = Enum.TextXAlignment.Left
-oxygenCaption.Font = Enum.Font.Gotham
-oxygenCaption.TextSize = 12
-oxygenCaption.TextColor3 = Color3.fromRGB(160, 190, 200)
-oxygenCaption.Text = "🫁 -- / --"
-oxygenCaption.Parent = container
+local toastHolder = Instance.new("Frame")
+toastHolder.Name = "Toasts"
+toastHolder.BackgroundTransparency = 1
+toastHolder.Size = UDim2.fromOffset(300, 300)
+toastHolder.LayoutOrder = 3
+toastHolder.Parent = rightColumn
+local toastLayout = Instance.new("UIListLayout")
+toastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+toastLayout.SortOrder = Enum.SortOrder.LayoutOrder
+toastLayout.Padding = UDim.new(0, 8)
+toastLayout.Parent = toastHolder
 
--- Current indicator: only present while inside a current (the row
--- collapses out of the layout otherwise), driven by CurrentField's
--- enter/exit signals rather than any polling of its own.
-local currentLabel = Instance.new("TextLabel")
-currentLabel.Name = "CurrentLabel"
-currentLabel.LayoutOrder = 5
-currentLabel.Size = UDim2.new(1, 0, 0, 16)
-currentLabel.BackgroundTransparency = 1
-currentLabel.TextXAlignment = Enum.TextXAlignment.Left
-currentLabel.Font = Enum.Font.GothamBold
-currentLabel.TextSize = 13
-currentLabel.TextColor3 = Color3.fromRGB(170, 225, 240)
-currentLabel.Text = ""
-currentLabel.Visible = false
-currentLabel.Parent = container
-
--- Loot bag: what the diver carries (sold on surfacing, lost on death --
--- PlayerInventory on the server) and the banked total.
-local bagLabel = Instance.new("TextLabel")
-bagLabel.Name = "BagLabel"
-bagLabel.LayoutOrder = 6
-bagLabel.Size = UDim2.new(1, 0, 0, 16)
-bagLabel.BackgroundTransparency = 1
-bagLabel.TextXAlignment = Enum.TextXAlignment.Left
-bagLabel.Font = Enum.Font.GothamBold
-bagLabel.TextSize = 13
-bagLabel.TextColor3 = Color3.fromRGB(255, 214, 120)
-bagLabel.Text = "🎒 Sac vide · 💰 0"
-bagLabel.Parent = container
-
--- Short toast in the upper middle of the screen for loot events.
-local toast = Instance.new("TextLabel")
-toast.Name = "LootToast"
-toast.AnchorPoint = Vector2.new(0.5, 0)
-toast.Position = UDim2.new(0.5, 0, 0, 90)
-toast.Size = UDim2.new(0, 460, 0, 34)
-toast.BackgroundTransparency = 1
-toast.Font = Enum.Font.GothamBold
-toast.TextSize = 22
-toast.TextColor3 = Color3.fromRGB(255, 225, 140)
-toast.TextStrokeTransparency = 0.4
-toast.TextTransparency = 1
-toast.Text = ""
-toast.Parent = screenGui
-
-local toastToken = 0
-local function showToast(text: string, color: Color3)
-	toastToken += 1
-	local token = toastToken
-	toast.Text = text
-	toast.TextColor3 = color
-	toast.TextTransparency = 0
-	task.delay(2.2, function()
-		if token == toastToken then
-			TweenService:Create(toast, TweenInfo.new(0.6), { TextTransparency = 1 }):Play()
+local toastOrder = 0
+local function toast(title: string, subtitle: string, accent: Color3)
+	toastOrder += 1
+	local slot = Instance.new("Frame")
+	slot.Name = "Toast"
+	slot.BackgroundTransparency = 1
+	slot.Size = UDim2.fromOffset(290, 58)
+	slot.LayoutOrder = -toastOrder -- newest on top
+	slot.ClipsDescendants = false
+	slot.Parent = toastHolder
+	local card = UITheme.Panel(slot, "Card", UDim2.fromScale(1, 1), UDim2.fromScale(1.2, 0), nil)
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(0, 4, 1, -16)
+	bar.Position = UDim2.fromOffset(8, 8)
+	bar.BackgroundColor3 = accent
+	bar.BorderSizePixel = 0
+	bar.Parent = card
+	UITheme.Corner(bar)
+	local titleLabel = UITheme.Label(card, "Title", title, F.Bold, 15)
+	titleLabel.Position = UDim2.fromOffset(22, 9)
+	titleLabel.Size = UDim2.new(1, -30, 0, 18)
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	local subtitleLabel = UITheme.Label(card, "Subtitle", subtitle, F.Medium, 12, accent)
+	subtitleLabel.Position = UDim2.fromOffset(22, 31)
+	subtitleLabel.Size = UDim2.new(1, -30, 0, 16)
+	tween(card, 0.45, { Position = UDim2.fromScale(0, 0) }, Enum.EasingStyle.Back)
+	local children = toastHolder:GetChildren()
+	if #children > 5 then
+		for _, child in ipairs(children) do
+			if child:IsA("Frame") and child.LayoutOrder == -(toastOrder - 4) then
+				child:Destroy()
+			end
+		end
+	end
+	task.delay(3.2, function()
+		if slot.Parent then
+			tween(card, 0.4, { Position = UDim2.fromScale(1.2, 0), BackgroundTransparency = 1 })
+			task.wait(0.4)
+			slot:Destroy()
 		end
 	end)
 end
 
-local TIER_LABELS = { Weak = "faible", Medium = "moyen", Strong = "fort", FastLane = "voie rapide" }
+-- Current chip -------------------------------------------------------------------------------------
 
-local function showCurrent(currentPart: Instance)
-	local name = currentPart:GetAttribute("CurrentDisplayName") or currentPart.Name
-	local tier = TIER_LABELS[currentPart:GetAttribute("CurrentTier")] or ""
-	currentLabel.Text = string.format("🌊 %s (%s)", name, tier)
-	currentLabel.Visible = true
+local TIER = {
+	Weak = { "faible", Color3.fromRGB(150, 220, 240) },
+	Medium = { "moyen", C.Oxygen },
+	Strong = { "fort", Color3.fromRGB(255, 180, 80) },
+	FastLane = { "voie rapide", Color3.fromRGB(255, 110, 200) },
+}
+local currentChip = UITheme.Panel(screenGui, "Current", UDim2.fromOffset(340, 38), UDim2.new(0.5, 0, 0, -50), Vector2.new(0.5, 0))
+local currentLabel = UITheme.Label(currentChip, "Text", "", F.Bold, 15)
+currentLabel.Size = UDim2.fromScale(1, 1)
+currentLabel.TextXAlignment = Enum.TextXAlignment.Center
+local function showCurrent(current: Instance)
+	local tier = TIER[current:GetAttribute("CurrentTier")] or TIER.Medium
+	currentLabel.Text = string.format("≈  %s  ·  %s", tostring(current:GetAttribute("CurrentDisplayName") or current.Name), tier[1]:upper())
+	currentLabel.TextColor3 = tier[2]
+	tween(currentChip, 0.35, { Position = UDim2.new(0.5, 0, 0, 22) })
 end
-
 CurrentField.Entered:Connect(showCurrent)
 CurrentField.Changed:Connect(showCurrent)
 CurrentField.Exited:Connect(function()
-	currentLabel.Visible = false
+	tween(currentChip, 0.35, { Position = UDim2.new(0.5, 0, 0, -50) })
 end)
 
--- Zone label emphasis/settle transition --------------------------------
-
-local zoneSettleThread = nil
-
-local function setZoneRestStyle(displayName: string)
-	if zoneSettleThread then
-		task.cancel(zoneSettleThread)
-		zoneSettleThread = nil
-	end
-	zoneLabel.Text = "📍 " .. displayName:upper()
-	zoneLabel.TextSize = ZONE_REST_SIZE
-	zoneLabel.TextTransparency = ZONE_REST_TRANSPARENCY
-end
-
-local function announceZoneChange(displayName: string)
-	zoneLabel.Text = "📍 " .. displayName:upper()
-
-	if zoneSettleThread then
-		task.cancel(zoneSettleThread)
-	end
-
-	TweenService:Create(zoneLabel, TweenInfo.new(0.15), {
-		TextSize = ZONE_EMPHASIS_SIZE,
-		TextTransparency = 0,
-	}):Play()
-
-	zoneSettleThread = task.delay(ZONE_EMPHASIS_HOLD, function()
-		zoneSettleThread = nil
-		TweenService:Create(zoneLabel, TweenInfo.new(ZONE_SETTLE_TIME), {
-			TextSize = ZONE_REST_SIZE,
-			TextTransparency = ZONE_REST_TRANSPARENCY,
-		}):Play()
-	end)
-end
-
--- Oxygen low-alert pulse -------------------------------------------------
-
-local alertTween = nil
-
-local function setLowOxygenAlertActive(active: boolean)
-	if active then
-		if alertTween then
-			return
-		end
-		oxygenBarStroke.Transparency = 0.4
-		alertTween = TweenService:Create(
-			oxygenBarStroke,
-			TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-			{ Transparency = 0 }
-		)
-		alertTween:Play()
-	else
-		if alertTween then
-			alertTween:Cancel()
-			alertTween = nil
-		end
-		oxygenBarStroke.Transparency = 1
-	end
-end
-
--- Live updates ------------------------------------------------------------
--- Event-driven: the server only writes Depth/Oxygen a few times per second,
--- so redrawing from each value's Changed signal is both cheaper and exactly
--- as current as polling every frame was.
-
-local currentZoneName = nil
-
-local function refreshDepth(depth: number)
-	depthLabel.Text = string.format("📏 %d m", depth)
-
-	if depth > 0 then
-		local zone = DepthUtils.GetZoneForDepth(depth)
-		if zone.Name ~= currentZoneName then
-			currentZoneName = zone.Name
-			announceZoneChange(zone.Name)
-		end
-	elseif currentZoneName ~= nil then
-		currentZoneName = nil
-		setZoneRestStyle("Surface")
-	end
-end
-
-local function refreshOxygen(oxygen: number, maxOxygenRaw: number)
-	local maxOxygen = maxOxygenRaw > 0 and maxOxygenRaw or OxygenConfig.MaxOxygen
-	local fraction = math.clamp(oxygen / maxOxygen, 0, 1)
-	oxygenBarFill.Size = UDim2.new(fraction, 0, 1, 0)
-	oxygenCaption.Text = string.format("🫁 %d / %d", math.ceil(oxygen), math.floor(maxOxygen))
-
-	if fraction <= LOW_OXYGEN_THRESHOLD then
-		oxygenBarFill.BackgroundColor3 = OXYGEN_LOW_COLOR:Lerp(ACCENT_COLOR, fraction / LOW_OXYGEN_THRESHOLD)
-		setLowOxygenAlertActive(true)
-	else
-		oxygenBarFill.BackgroundColor3 = ACCENT_COLOR
-		setLowOxygenAlertActive(false)
-	end
-end
+-- Live values -----------------------------------------------------------------------------------------
 
 local depthValue = player:WaitForChild("Depth")
 local oxygenValue = player:WaitForChild("Oxygen")
 local maxOxygenValue = player:WaitForChild("MaxOxygen")
-
-depthValue.Changed:Connect(refreshDepth)
-oxygenValue.Changed:Connect(function(oxygen)
-	refreshOxygen(oxygen, maxOxygenValue.Value)
-end)
-maxOxygenValue.Changed:Connect(function(maxOxygen)
-	refreshOxygen(oxygenValue.Value, maxOxygen)
-end)
-
-refreshDepth(depthValue.Value)
-refreshOxygen(oxygenValue.Value, maxOxygenValue.Value)
-
+local drainValue = player:WaitForChild("OxygenDrainPerSecond")
 local carriedValue = player:WaitForChild("CarriedValue")
 local carriedCount = player:WaitForChild("CarriedCount")
-local leaderstats = player:WaitForChild("leaderstats")
-local coinsValue = leaderstats:WaitForChild("Pièces")
+local coinsValue = player:WaitForChild("leaderstats"):WaitForChild("Pièces")
+
+local shownDepth, shownOxygen, shownCoins = depthValue.Value, 1, coinsValue.Value
 
 local function refreshBag()
-	local bag = carriedCount.Value > 0 and string.format("🎒 %d objet%s · %d", carriedCount.Value, carriedCount.Value > 1 and "s" or "", carriedValue.Value) or "🎒 Sac vide"
-	bagLabel.Text = string.format("%s · 💰 %d", bag, coinsValue.Value)
+	if carriedCount.Value > 0 then
+		bagLabel.Text = string.format("%d  ·  %s", carriedCount.Value, UITheme.FormatNumber(carriedValue.Value))
+	else
+		bagLabel.Text = "vide"
+	end
 end
 carriedValue.Changed:Connect(refreshBag)
 carriedCount.Changed:Connect(refreshBag)
-coinsValue.Changed:Connect(refreshBag)
 refreshBag()
+
+local function pulse(frame: Frame)
+	local scale = frame:FindFirstChildOfClass("UIScale") or Instance.new("UIScale")
+	scale.Parent = frame
+	scale.Scale = 1.12
+	tween(scale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+end
+coinsValue.Changed:Connect(function()
+	pulse(coinsChip)
+end)
+carriedValue.Changed:Connect(function()
+	pulse(bagChip)
+end)
 
 local lootEvent = ReplicatedStorage:WaitForChild("LootEvent")
 lootEvent.OnClientEvent:Connect(function(kind: string, a, b, c)
 	if kind == "Collected" then
-		showToast(string.format("+ %s (%d) -- remonte pour le vendre", a, b), Color3.fromRGB(255, 225, 140))
+		toast(string.format("%s  +%s", a, UITheme.FormatNumber(b)), (c or "Trésor") .. "  ·  dans le sac", UITheme.Rarity[c] or C.Gold)
 	elseif kind == "Banked" then
-		showToast(string.format("Vendu : %d objet%s pour %d pièces (total %d)", b, b > 1 and "s" or "", a, c), Color3.fromRGB(140, 240, 160))
+		toast(string.format("Vendu  +%s", UITheme.FormatNumber(a)), string.format("%d objet%s  ·  total %s", b, b > 1 and "s" or "", UITheme.FormatNumber(c)), C.Success)
 	elseif kind == "Lost" then
-		showToast(string.format("Butin perdu : %d pièces", a), Color3.fromRGB(255, 110, 100))
+		toast(string.format("Butin perdu  −%s", UITheme.FormatNumber(a)), string.format("%d objet%s au fond", b, b > 1 and "s" or ""), C.Danger)
 	end
+end)
+
+-- Per frame: glide the gauge/bar/counters toward their values; pulse the
+-- low-oxygen warning.
+RunService.RenderStepped:Connect(function(dt)
+	local alpha = 1 - math.exp(-dt * 10)
+
+	shownDepth += (depthValue.Value - shownDepth) * alpha
+	local fraction = math.clamp(shownDepth / MAX_DEPTH, 0, 1)
+	marker.Position = UDim2.new(0.5, 0, fraction, 0)
+	local absolute = track.AbsolutePosition.Y + track.AbsoluteSize.Y * fraction
+	readout.Position = UDim2.fromOffset(gauge.AbsolutePosition.X + gauge.AbsoluteSize.X + 10, absolute + screenGui.AbsolutePosition.Y)
+	depthText.Text = string.format("%d m", math.floor(shownDepth + 0.5))
+	zoneText.Text = depthValue.Value > 0 and DepthUtils.GetZoneForDepth(depthValue.Value).Name:upper() or "SURFACE"
+
+	local maxOxygen = maxOxygenValue.Value > 0 and maxOxygenValue.Value or 1
+	local oxygenFraction = math.clamp(oxygenValue.Value / maxOxygen, 0, 1)
+	shownOxygen += (oxygenFraction - shownOxygen) * alpha
+	barFill.Size = UDim2.fromScale(shownOxygen, 1)
+	local seconds = drainValue.Value > 0 and oxygenValue.Value / drainValue.Value or oxygenValue.Value
+	oxygenTime.Text = string.format("%d s", math.ceil(seconds))
+
+	local low = oxygenFraction <= LOW_OXYGEN and depthValue.Value > 0
+	local beat = (math.sin(os.clock() * 6) + 1) / 2
+	barGradient.Color = low and ColorSequence.new(C.Danger, Color3.fromRGB(255, 140, 90)) or ColorSequence.new(C.Oxygen, C.OxygenDeep)
+	oxygenStroke.Transparency = low and (0.1 + beat * 0.5) or 1
+	oxygenTime.TextColor3 = low and C.Danger or C.Text
+	oxygenTitle.TextColor3 = low and C.Danger or C.TextDim
+	local vignetteStrength = low and (1 - oxygenFraction / LOW_OXYGEN) * (0.6 + beat * 0.4) or 0
+	for _, edge in ipairs(edges) do
+		edge.BackgroundTransparency = 1 - vignetteStrength * 0.8
+	end
+	surfaceHint.Visible = low
+	surfaceHint.TextTransparency = low and beat * 0.5 or 1
+
+	shownCoins += (coinsValue.Value - shownCoins) * alpha
+	if math.abs(coinsValue.Value - shownCoins) < 0.5 then
+		shownCoins = coinsValue.Value
+	end
+	coinsLabel.Text = UITheme.FormatNumber(shownCoins)
 end)

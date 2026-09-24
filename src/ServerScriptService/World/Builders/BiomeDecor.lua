@@ -109,43 +109,47 @@ function BiomeDecor.Build(layout)
 		return ground(x, z)
 	end
 
-	for _ = 1, 70 do
-		local base = lagoonPoint(76, 176)
+	-- One coral head: a random mix of branching, brain, table, fan corals,
+	-- tube sponges and anemones around a point on the seabed.
+	local function coralHead(parent: Instance, base: Vector3)
 		local color = CORAL_COLORS[rng:NextInteger(1, #CORAL_COLORS)]
 		local kind = random()
 		if kind < 0.3 then
 			for _ = 1, rng:NextInteger(4, 7) do -- branching coral
 				local height = 1.5 + random() * 3
 				local tilt = CFrame.Angles((random() - 0.5) * 1, random() * math.pi * 2, (random() - 0.5) * 1)
-				prop(reef, "BranchCoral", Vector3.new(0.4, height, 0.4), CFrame.new(base) * tilt * CFrame.new(0, height / 2, 0), Enum.Material.SmoothPlastic, color)
+				prop(parent, "BranchCoral", Vector3.new(0.4, height, 0.4), CFrame.new(base) * tilt * CFrame.new(0, height / 2, 0), Enum.Material.SmoothPlastic, color)
 			end
 		elseif kind < 0.52 then -- brain coral
 			local size = 2 + random() * 3
-			ellipsoid(reef, "BrainCoral", Vector3.new(size, size * 0.65, size), CFrame.new(base + Vector3.new(0, size * 0.2, 0)), Enum.Material.Pebble, color)
+			ellipsoid(parent, "BrainCoral", Vector3.new(size, size * 0.65, size), CFrame.new(base + Vector3.new(0, size * 0.2, 0)), Enum.Material.Pebble, color)
 		elseif kind < 0.66 then -- table coral
 			local width = 4 + random() * 4
-			prop(reef, "TableStalk", Vector3.new(0.8, 1.8, 0.8), CFrame.new(base + Vector3.new(0, 0.9, 0)), Enum.Material.SmoothPlastic, color)
-			local top = prop(reef, "TableCoral", Vector3.new(0.5, width, width), CFrame.new(base + Vector3.new(0, 1.9, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.Pebble, color, Enum.PartType.Cylinder)
+			prop(parent, "TableStalk", Vector3.new(0.8, 1.8, 0.8), CFrame.new(base + Vector3.new(0, 0.9, 0)), Enum.Material.SmoothPlastic, color)
+			local top = prop(parent, "TableCoral", Vector3.new(0.5, width, width), CFrame.new(base + Vector3.new(0, 1.9, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.Pebble, color, Enum.PartType.Cylinder)
 			top.CastShadow = true
 		elseif kind < 0.8 then -- fan coral
 			local width = 2.5 + random() * 3
-			sway(prop(reef, "FanCoral", Vector3.new(width, width * 0.9, 0.15), CFrame.new(base + Vector3.new(0, width * 0.45, 0)) * CFrame.Angles(0, random() * math.pi, 0), Enum.Material.Fabric, color), 0.08, 0.8)
+			sway(prop(parent, "FanCoral", Vector3.new(width, width * 0.9, 0.15), CFrame.new(base + Vector3.new(0, width * 0.45, 0)) * CFrame.Angles(0, random() * math.pi, 0), Enum.Material.Fabric, color), 0.08, 0.8)
 		elseif kind < 0.9 then -- tube sponges
 			for _ = 1, rng:NextInteger(3, 5) do
 				local height = 1.5 + random() * 3
 				local at = base + Vector3.new((random() - 0.5) * 2, 0, (random() - 0.5) * 2)
-				prop(reef, "TubeSponge", Vector3.new(height, 0.9, 0.9), CFrame.new(at + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.Pebble, Color3.fromRGB(230, 140, 60), Enum.PartType.Cylinder)
+				prop(parent, "TubeSponge", Vector3.new(height, 0.9, 0.9), CFrame.new(at + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.Pebble, Color3.fromRGB(230, 140, 60), Enum.PartType.Cylinder)
 			end
 		else -- anemone with its fringe of tentacles
-			ellipsoid(reef, "AnemoneBase", Vector3.new(1.8, 1, 1.8), CFrame.new(base + Vector3.new(0, 0.3, 0)), Enum.Material.SmoothPlastic, Color3.fromRGB(200, 70, 90))
+			ellipsoid(parent, "AnemoneBase", Vector3.new(1.8, 1, 1.8), CFrame.new(base + Vector3.new(0, 0.3, 0)), Enum.Material.SmoothPlastic, Color3.fromRGB(200, 70, 90))
 			for k = 1, 10 do
 				local angle = k / 10 * math.pi * 2
-				local tentacle = prop(reef, "AnemoneTentacle", Vector3.new(0.2, 1.4, 0.2), CFrame.new(base + Vector3.new(math.cos(angle) * 0.6, 1.2, math.sin(angle) * 0.6)) * CFrame.Angles(math.sin(angle) * 0.5, 0, -math.cos(angle) * 0.5), Enum.Material.Neon, Color3.fromRGB(255, 170, 200))
+				local tentacle = prop(parent, "AnemoneTentacle", Vector3.new(0.2, 1.4, 0.2), CFrame.new(base + Vector3.new(math.cos(angle) * 0.6, 1.2, math.sin(angle) * 0.6)) * CFrame.Angles(math.sin(angle) * 0.5, 0, -math.cos(angle) * 0.5), Enum.Material.Neon, Color3.fromRGB(255, 170, 200))
 				tentacle.Transparency = 0.2
 			end
 		end
 	end
-	for _ = 1, 26 do -- urchins and starfish on the sand
+	for _ = 1, 150 do
+		coralHead(reef, lagoonPoint(76, 176))
+	end
+	for _ = 1, 40 do -- urchins and starfish on the sand
 		local base = lagoonPoint(70, 178)
 		if random() < 0.5 then
 			ellipsoid(reef, "Urchin", Vector3.new(0.9, 0.7, 0.9), CFrame.new(base + Vector3.new(0, 0.3, 0)), Enum.Material.Pebble, Color3.fromRGB(40, 30, 60))
@@ -165,7 +169,7 @@ function BiomeDecor.Build(layout)
 		ellipsoid(reef, "ClamShell", Vector3.new(3, 1.2, 2.2), CFrame.new(base + Vector3.new(0, 1.2, 0)) * CFrame.Angles(0, yaw, -0.35), Enum.Material.Pebble, Color3.fromRGB(150, 140, 165))
 		ellipsoid(reef, "ClamMantle", Vector3.new(2.4, 0.4, 1.6), CFrame.new(base + Vector3.new(0, 0.95, 0)) * CFrame.Angles(0, yaw, 0), Enum.Material.Neon, Color3.fromRGB(60, 190, 200)).Transparency = 0.3
 	end
-	for _ = 1, 14 do -- seagrass meadows
+	for _ = 1, 30 do -- seagrass meadows
 		local center = lagoonPoint(80, 170)
 		for _ = 1, 16 do
 			local at = ground(center.X + (random() - 0.5) * 12, center.Z + (random() - 0.5) * 12)
@@ -178,16 +182,58 @@ function BiomeDecor.Build(layout)
 		local height = 6 + random() * 9
 		sway(prop(reef, "Kelp", Vector3.new(0.5, height, 0.5), CFrame.new(base + Vector3.new(0, height / 2, 0)) * CFrame.Angles((random() - 0.5) * 0.2, random() * math.pi * 2, (random() - 0.5) * 0.2), Enum.Material.Grass, KELP_GREEN), 0.12, 0.6)
 	end
-	for k = 1, 4 do
-		local x, z = onBearing(k * 90 + 20, 128)
-		creatureRegion("Creatures_Lagoon" .. k, Vector3.new(x, -10, z), Vector3.new(50, 5, 50), "PoissonRecif,TortueMarine", 9)
+	for k = 1, 6 do
+		local x, z = onBearing(k * 60 + 20, 128)
+		creatureRegion("Creatures_Lagoon" .. k, Vector3.new(x, -10, z), Vector3.new(50, 5, 50), "PoissonRecif,TortueMarine", 8)
+	end
+
+	-- Coral gardens on the upper flanks (60-150 m), just below the wall:
+	-- coral heads in clusters, with anemone fields, and reef fish over them.
+	local flank = folder("FlankGardens")
+	local gardens = 0
+	for attempt = 1, 400 do
+		if gardens >= 55 then
+			break
+		end
+		local bearing = random() * 360
+		local x, z = onBearing(bearing, 215 + random() * 90)
+		local center = ground(x, z)
+		if center.Y < -60 and center.Y > -150 and layout:IsFree(center + Vector3.new(0, 8, 0), 2) then
+			gardens += 1
+			for _ = 1, rng:NextInteger(4, 8) do
+				local at = ground(center.X + (random() - 0.5) * 22, center.Z + (random() - 0.5) * 22)
+				coralHead(flank, at)
+			end
+			if gardens % 11 == 0 then
+				-- Reef fish only live above 120 m; deeper gardens get turtles and rays.
+				local species = center.Y + 12 > -110 and "PoissonRecif,TortueMarine" or "TortueMarine,RaieManta"
+				creatureRegion("Creatures_FlankGarden" .. gardens, center + Vector3.new(0, 12, 0), Vector3.new(40, 10, 40), species, 8, 30)
+			end
+		end
+	end
+	-- Anemone fields deeper on the flanks, glowing in the dim light.
+	for _ = 1, 30 do
+		local x, z = onBearing(random() * 360, 280 + random() * 120)
+		local center = ground(x, z)
+		if center.Y < -160 and center.Y > -300 and layout:IsFree(center + Vector3.new(0, 6, 0), 2) then
+			for _ = 1, rng:NextInteger(6, 12) do
+				local at = ground(center.X + (random() - 0.5) * 16, center.Z + (random() - 0.5) * 16)
+				local hue = random() < 0.5 and Color3.fromRGB(255, 120, 200) or Color3.fromRGB(120, 255, 200)
+				ellipsoid(flank, "AnemoneBase", Vector3.new(1.4, 0.9, 1.4), CFrame.new(at + Vector3.new(0, 0.3, 0)), Enum.Material.SmoothPlastic, Color3.fromRGB(120, 60, 90))
+				for k = 1, 8 do
+					local angle = k / 8 * math.pi * 2
+					local tentacle = sway(prop(flank, "AnemoneTentacle", Vector3.new(0.18, 1.6, 0.18), CFrame.new(at + Vector3.new(math.cos(angle) * 0.45, 1.2, math.sin(angle) * 0.45)) * CFrame.Angles(math.sin(angle) * 0.5, 0, -math.cos(angle) * 0.5), Enum.Material.Neon, hue), 0.25, 0.9)
+					tentacle.Transparency = 0.25
+				end
+			end
+		end
 	end
 
 	-- The reef wall -------------------------------------------------------------------
 	-- A spot on the cliff: march outward along a bearing until the seabed
 	-- drops below the target depth; the growth sticks out of the face there.
 	local wall = folder("ReefWall")
-	for _ = 1, 90 do
+	for _ = 1, 170 do
 		local bearing = random() * 360
 		local targetY = -55 - random() * 55
 		local a = math.rad(bearing)
@@ -233,7 +279,29 @@ function BiomeDecor.Build(layout)
 	end
 	do
 		local x, z = onBearing(265, 270)
-		creatureRegion("Creatures_KelpForest", Vector3.new(x, -110, z), Vector3.new(120, 30, 120), "TortueMarine,RaieManta", 5, 70)
+		creatureRegion("Creatures_KelpForest", Vector3.new(x, -110, z), Vector3.new(120, 30, 120), "TortueMarine,RaieManta", 6, 70)
+	end
+	-- A second, golden kelp forest on the eastern flank.
+	planted = 0
+	for _ = 1, 400 do
+		if planted >= 100 then
+			break
+		end
+		local x, z = onBearing(95 + random() * 40, 215 + random() * 100)
+		local base = ground(x, z)
+		if base.Y < -80 and base.Y > -170 and layout:IsFree(base + Vector3.new(0, 10, 0), 3) then
+			planted += 1
+			local height = 20 + random() * 24
+			local stalk = sway(prop(kelpForest, "GiantKelp", Vector3.new(0.9, height, 0.9), CFrame.new(base + Vector3.new(0, height / 2 - 0.5, 0)) * CFrame.Angles((random() - 0.5) * 0.12, random() * math.pi * 2, (random() - 0.5) * 0.12), Enum.Material.Grass, KELP_GOLD), 0.025, 0.3 + random() * 0.15)
+			stalk.CastShadow = false
+			for leaf = 1, 3 do
+				prop(kelpForest, "KelpBlade", Vector3.new(0.12, 5, 2), stalk.CFrame * CFrame.new(0, (leaf / 4) * height - height / 2, 0) * CFrame.Angles(0, leaf * 2.1, 0.5) * CFrame.new(0, 2, 1), Enum.Material.Grass, KELP_GOLD)
+			end
+		end
+	end
+	do
+		local x, z = onBearing(115, 265)
+		creatureRegion("Creatures_KelpForestEast", Vector3.new(x, -105, z), Vector3.new(110, 30, 110), "TortueMarine,RaieManta,PoissonRecif", 8, 60)
 	end
 
 	-- Abyssal rift ---------------------------------------------------------------------------
@@ -284,7 +352,22 @@ function BiomeDecor.Build(layout)
 	end
 
 	-- Abyssal plain -----------------------------------------------------------------------------
-	for _ = 1, 60 do
+	-- Sea lilies (crinoids): a slim stalk crowned with feathery arms.
+	for _ = 1, 70 do
+		local angle = random() * math.pi * 2
+		local radius = 500 + random() * 420
+		local base = ground(math.cos(angle) * radius, math.sin(angle) * radius)
+		if base.Y < -440 and math.abs(base.X) < 980 and math.abs(base.Z) < 980 then
+			local height = 4 + random() * 5
+			local color = random() < 0.5 and Color3.fromRGB(230, 180, 90) or Color3.fromRGB(200, 90, 120)
+			prop(abyss, "CrinoidStalk", Vector3.new(0.3, height, 0.3), CFrame.new(base + Vector3.new(0, height / 2, 0)), Enum.Material.SmoothPlastic, Color3.fromRGB(190, 170, 150))
+			for arm = 1, 6 do
+				local a = arm / 6 * math.pi * 2
+				sway(prop(abyss, "CrinoidArm", Vector3.new(0.25, 2.4, 0.5), CFrame.new(base + Vector3.new(math.cos(a) * 0.7, height + 0.9, math.sin(a) * 0.7)) * CFrame.Angles(math.sin(a) * 0.7, 0, -math.cos(a) * 0.7), Enum.Material.Fabric, color), 0.15, 0.4)
+			end
+		end
+	end
+	for _ = 1, 110 do
 		local angle = random() * math.pi * 2
 		local radius = 480 + random() * 450
 		local base = ground(math.cos(angle) * radius, math.sin(angle) * radius)
@@ -312,11 +395,15 @@ function BiomeDecor.Build(layout)
 
 	-- Open water ("le grand bleu"): mantas and sharks patrol well off the
 	-- island, where nothing blocks their long glides.
-	for k = 1, 3 do
-		local x, z = onBearing(k * 120 - 40, 700)
+	for k = 1, 5 do
+		local x, z = onBearing(k * 72 - 40, 690)
 		if math.abs(x) < 900 and math.abs(z) < 900 then
-			creatureRegion("Creatures_OpenWater" .. k, Vector3.new(x, -200, z), Vector3.new(200, 80, 200), "RaieManta,RequinRecif", 4)
+			creatureRegion("Creatures_OpenWater" .. k, Vector3.new(x, -200, z), Vector3.new(200, 80, 200), "RaieManta,RequinRecif", 6)
 		end
+	end
+	for k = 1, 2 do
+		local x, z = onBearing(k * 150 + 70, 820)
+		creatureRegion("Creatures_AbyssPlain" .. k, Vector3.new(x, -440, z), Vector3.new(160, 30, 160), "MeduseLumineuse", 5)
 	end
 
 	print(string.format("[BiomeDecor] %d decor parts", count))

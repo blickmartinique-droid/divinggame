@@ -139,7 +139,7 @@ NumberRange = valueType("NumberRange")
 TweenInfo = valueType("TweenInfo")
 UDim = valueType("UDim")
 UDim2 = { new = function(...) return { _type = "UDim2", _args = { ... } } end, fromScale = function(...) return { _type = "UDim2" } end, fromOffset = function(...) return { _type = "UDim2" } end }
-Vector2 = { new = function(x, y) return { X = x or 0, Y = y or 0 } end }
+Vector2 = { new = function(x, y) return { X = x or 0, Y = y or 0 } end, zero = { X = 0, Y = 0 }, one = { X = 1, Y = 1 } }
 
 local Region3MT = {}
 Region3MT.__index = Region3MT
@@ -177,9 +177,17 @@ local REAL = {
 	OrientationAlignmentMode = { OneAttachment = true, TwoAttachment = true },
 	AnimationPriority = { Core = true, Idle = true, Movement = true, Action = true, Action2 = true },
 	NormalId = { Top = true, Bottom = true, Front = true, Back = true, Left = true, Right = true },
-	EasingStyle = { Linear = true, Sine = true, Quad = true, Quart = true, Quint = true, Back = true, Cubic = true, Exponential = true },
+	EasingStyle = { Linear = true, Sine = true, Quad = true, Quart = true, Quint = true, Back = true, Cubic = true, Exponential = true, Elastic = true, Bounce = true, Circular = true },
 	EasingDirection = { In = true, Out = true, InOut = true },
-	Font = { SourceSans = true, GothamMedium = true, Gotham = true, GothamBold = true },
+	Font = { SourceSans = true, GothamMedium = true, Gotham = true, GothamBold = true, GothamBlack = true },
+	TextXAlignment = { Left = true, Center = true, Right = true },
+	TextYAlignment = { Top = true, Center = true, Bottom = true },
+	FillDirection = { Horizontal = true, Vertical = true },
+	HorizontalAlignment = { Left = true, Center = true, Right = true },
+	VerticalAlignment = { Top = true, Center = true, Bottom = true },
+	SortOrder = { LayoutOrder = true, Name = true },
+	ApplyStrokeMode = { Contextual = true, Border = true },
+	ZIndexBehavior = { Global = true, Sibling = true },
 	RenderPriority = { Camera = true, Character = true, First = true, Input = true, Last = true },
 }
 -- Enum items are cached so `part.Shape == Enum.PartType.Ball` compares
@@ -548,6 +556,7 @@ typeof = function(v)
 	local mt = getmetatable(v)
 	if mt == V3 then return "Vector3" end
 	if mt == CF then return "CFrame" end
+	if mt == C3 then return "Color3" end
 	if mt == Inst then return "Instance" end
 	return type(v)
 end
