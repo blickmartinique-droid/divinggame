@@ -139,8 +139,10 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 - **Grottes de l'Éperon** — `Builders/Caves.lua`, un réseau creusé dans
   l'éperon. Accès le plus simple : le **Trou Bleu**, un puits qui s'ouvre
   directement au bord du lagon et plonge vers la Salle des Cristaux. Chaque
-  entrée est signalée par un anneau de perles lumineuses, une lumière et un
-  panneau « ⛰ nom » visible de loin. Réseau : **Porche du Récif** (~118 m) → **Salle des Cristaux** (géode de
+  entrée est posée sur la vraie paroi (là où le tunnel entre dans la roche),
+  s'ouvre en large porche évasé et, sur les entrées latérales, une faille
+  est taillée dans la paroi au-dessus : on la voit d'en haut. Anneau de
+  perles lumineuses, lumière et panneau « ⛰ nom » visible de loin. Réseau : **Porche du Récif** (~118 m) → **Salle des Cristaux** (géode de
   cristaux lumineux) → **La Cathédrale** (~185 m, piliers de roche, puits de
   lumière du jour tombant d'une cheminée, autel ancien et idole) → sortie
   **Fenêtre** ; → **Grotte aux Méduses** (~312 m, bassin bioluminescent) →
@@ -254,7 +256,7 @@ erreur comme dans Studio, le Terrain enregistre chaque remplissage) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 84 vérifications
+luau tests/world_test.lua      # 91 vérifications
 luau tests/ui_test.lua         # 31 vérifications
 ```
 
@@ -265,7 +267,8 @@ luau tests/ui_test.lua         # 31 vérifications
   vérifie la géométrie obtenue : sol continu sous la plage, tombant, fond
   sans trou, hauteur du sol conforme au terrain écrit ; salles des grottes
   ouvertes, fermées par un toit, sol de sable, tunnels dégagés de bout en
-  bout, entrées débouchant en eau libre, décors posés sur la roche ; coque
+  bout, entrées débouchant en eau libre, posées sur la paroi et ouvertes
+  vers le haut, décors posés sur la roche ; coque
   bordée, quille posée dans le sable, entrées de l'épave en eau libre ;
   chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné ;
   15 trésors minimum par zone, aucun trésor ni créature dans la roche, les

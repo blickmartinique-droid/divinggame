@@ -208,6 +208,48 @@ function Caves.Build(layout)
 		tunnels[spec.id] = { spec = spec, points = points, samples = samples, radii = radii }
 	end
 
+	-- 2b. Entrances. A tube simply running into a steep face leaves a hole
+	-- tucked under an overhang that nobody sees from above. So each mouth
+	-- sits where the tube really meets the rock (its axis passes under the
+	-- seabed surface), opens as a flared porch much wider than the tube,
+	-- and, on a sideways entrance, a cleft is cut up the face above it: from
+	-- the reef above, a diver sees a dark gash leading down into the hole.
+	local mouths = {}
+	for _, entrance in ipairs(ENTRANCES) do
+		local tunnel = tunnels[entrance.tunnel]
+		local samples, radius = tunnel.samples, tunnel.spec.radius
+		local first, last, step = 1, #samples, 1
+		if entrance.at ~= 1 then
+			first, last, step = #samples, 1, -1
+		end
+		local rimIndex = first
+		for i = first, last, step do
+			if layout:GroundHeight(samples[i].X, samples[i].Z) > samples[i].Y then
+				rimIndex = i
+				break
+			end
+		end
+		local rim = samples[rimIndex]
+		local ahead = samples[math.clamp(rimIndex + step * 3, 1, #samples)]
+		local inward = (ahead - rim).Unit
+		-- The porch: a funnel of big bubbles narrowing into the tube.
+		for k, factor in ipairs({ 1.9, 1.7, 1.45, 1.25, 1.1 }) do
+			terrain:FillBall(rim + inward * ((k - 2) * 5), radius * factor, Enum.Material.Water)
+		end
+		-- The cleft up the face (not on a vertical shaft, already open above).
+		if inward.Y > -0.6 then
+			local flat = Vector3.new(inward.X, 0, inward.Z).Unit
+			for k = 1, 14 do
+				local center = rim + flat * (k * 2.5) + Vector3.new(0, k * 5, 0)
+				terrain:FillBall(center, radius * (0.95 - k * 0.03), Enum.Material.Water)
+				if center.Y > layout:GroundHeight(center.X, center.Z) + radius * 0.5 then
+					break
+				end
+			end
+		end
+		mouths[entrance.id] = { rim = rim, inward = inward }
+	end
+
 	-- 3. Cathédrale: rock pillars from floor to ceiling (with flared foot
 	-- and capital), and the chimney letting daylight in from the ridge.
 	local cathedral = chamberById.Cathedrale
@@ -410,21 +452,20 @@ function Caves.Build(layout)
 	local entrances = {}
 	for _, entrance in ipairs(ENTRANCES) do
 		local tunnel = tunnels[entrance.tunnel]
-		local mouth = tunnel.points[entrance.at]
-		local inward = (tunnel.points[entrance.at == 1 and 2 or entrance.at - 1] - mouth).Unit
+		local mouth, inward = mouths[entrance.id].rim, mouths[entrance.id].inward
 		local marker = part(markers, "EntryPoint_" .. entrance.id, Vector3.new(1, 1, 1), CFrame.new(mouth), Enum.Material.SmoothPlastic, Color3.new(1, 1, 1))
 		marker.Transparency = 1
 		marker:SetAttribute("DisplayName", entrance.name)
-		local glow = part(decor, "EntranceGlow", Vector3.new(0.6, 0.6, 0.6), CFrame.new(mouth + inward * 14), Enum.Material.Neon, GLOW_BLUE)
+		local glow = part(decor, "EntranceGlow", Vector3.new(0.6, 0.6, 0.6), CFrame.new(mouth + inward * 12), Enum.Material.Neon, GLOW_BLUE)
 		glow.Transparency = 1
-		light(glow, GLOW_BLUE, 40, 1.4)
+		light(glow, GLOW_BLUE, 60, 2.2)
 		-- A ring of glowing algae around the mouth: a cave entrance reads
 		-- from far away in the blue, not only once you bump into it.
-		local ringFrame = CFrame.lookAt(mouth + inward * 3, mouth + inward * 10)
-		local ringRadius = tunnel.spec.radius + 1
-		for k = 1, 14 do
-			local angle = k / 14 * math.pi * 2
-			local bead = part(decor, "EntranceRing", Vector3.new(1.2, 1.2, 1.2), ringFrame * CFrame.new(math.cos(angle) * ringRadius, math.sin(angle) * ringRadius, 0), Enum.Material.Neon, GLOW_BLUE)
+		local ringFrame = CFrame.lookAt(mouth, mouth + inward * 10)
+		local ringRadius = tunnel.spec.radius * 1.3
+		for k = 1, 20 do
+			local angle = k / 20 * math.pi * 2
+			local bead = part(decor, "EntranceRing", Vector3.new(1.6, 1.6, 1.6), ringFrame * CFrame.new(math.cos(angle) * ringRadius, math.sin(angle) * ringRadius, 0), Enum.Material.Neon, GLOW_BLUE)
 			bead.Shape = Enum.PartType.Ball
 		end
 		-- And a floating sign, readable from a distance.

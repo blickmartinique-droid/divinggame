@@ -84,6 +84,16 @@ if caves then
 		check("entrance " .. entrance.id .. ": opens to open water", isWater(entrance.mouth) and isWater(entrance.mouth - entrance.inward * 20), tostring(entrance.mouth))
 		local g = layout:GroundHeight(entrance.mouth.X, entrance.mouth.Z)
 		check("entrance " .. entrance.id .. ": mouth is outside the rock", entrance.mouth.Y > g - 2 or isWater(entrance.mouth - entrance.inward * 20), g)
+		-- The sign/ring sit on the face itself, not floating in front of it.
+		check("entrance " .. entrance.id .. ": marked at the rock face", g > entrance.mouth.Y and g < entrance.mouth.Y + 40, g - entrance.mouth.Y)
+		-- Visible from above: the face over a sideways mouth is cut open.
+		if entrance.inward.Y > -0.6 then
+			local open = 0
+			for h = 6, 30, 6 do
+				if isWater(entrance.mouth + Vector3.new(0, h, 0)) then open += 1 end
+			end
+			check("entrance " .. entrance.id .. ": cleft open above the mouth", open >= 4, open)
+		end
 	end
 	-- The Cathédrale's pillars really stand (rock at mid-height around it).
 	local cathedral
