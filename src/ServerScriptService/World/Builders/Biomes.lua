@@ -71,6 +71,26 @@ function Biomes.Build(layout)
 		cylinder(name, text, color, 4, Vector3.new(liner.center.X, 0, liner.center.Z), 170, -530, -300, fog)
 	end
 
+	-- The volcano's lava tubes: each tube a string of capsules between its
+	-- control points, its halls named on top.
+	local network = layout:GetAnchor("Network")
+	if network then
+		for _, tube in pairs(network.tubes) do
+			local points = tube.points
+			for i = 1, #points - 1 do
+				add({ Shape = "Capsule", DisplayName = "Tunnels de lave", Description = "Vers " .. tube.spec.name .. " — suis les runes", Color = Color3.fromRGB(255, 140, 70), Priority = 4, A = points[i], B = points[i + 1], Radius = tube.spec.radius + 4 })
+			end
+		end
+		local descriptions = {
+			Coeur = "Un temple englouti sous le volcan, six tunnels en partent",
+			Echos = "Cristaux pâles sur la route de l'épave",
+			Orgues = "Orgues de basalte sur la route des abysses",
+		}
+		for _, chamber in ipairs(network.chambers) do
+			sphere(chamber.name, descriptions[chamber.id] or "Réseau du Volcan", Color3.fromRGB(255, 150, 80), 5, chamber.center, chamber.radius * 1.2)
+		end
+	end
+
 	local caves = layout:GetAnchor("Caves")
 	if caves then
 		for _, chamber in ipairs(caves.chambers) do

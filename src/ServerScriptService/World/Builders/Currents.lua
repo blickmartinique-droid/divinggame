@@ -250,6 +250,50 @@ local function createRings(container: Instance, startPosition: Vector3, totalLen
 	end
 end
 
+-- Flow ribbons: three glittering bands twisting slowly around a path's
+-- centre line, their texture scrolling in the flow direction at a pace set
+-- by the current's speed -- the stream itself made visible, like the
+-- great ocean currents in films, without any solid geometry in the water.
+-- Consecutive segments continue each other's twist.
+local RIBBON_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
+local RIBBON_COLOR = Color3.fromRGB(150, 225, 255)
+local function attachRibbons(segment: BasePart, index: number, length: number, width: number, intensity: number, maxSpeed: number)
+	local radius = width * 0.38
+	for strand = 0, 2 do
+		local angleStart = strand * math.pi * 2 / 3 + index * 0.45
+		local angleEnd = angleStart + 0.45
+		-- The segment looks from its start point toward its end (-Z).
+		local a0 = Instance.new("Attachment")
+		a0.Name = "RibbonStart"
+		a0.Position = Vector3.new(math.cos(angleStart) * radius, math.sin(angleStart) * radius, length / 2)
+		a0.Parent = segment
+		local a1 = Instance.new("Attachment")
+		a1.Name = "RibbonEnd"
+		a1.Position = Vector3.new(math.cos(angleEnd) * radius, math.sin(angleEnd) * radius, -length / 2)
+		a1.Parent = segment
+		local beam = Instance.new("Beam")
+		beam.Name = "FlowRibbon"
+		beam.Attachment0 = a0
+		beam.Attachment1 = a1
+		beam.FaceCamera = true
+		beam.Width0 = 0.9 + strand * 0.3
+		beam.Width1 = 0.9 + strand * 0.3
+		beam.Segments = 4
+		beam.Color = ColorSequence.new(RIBBON_COLOR, Color3.fromRGB(230, 250, 255))
+		beam.Transparency = NumberSequence.new(1 - 0.32 * intensity)
+		beam.LightEmission = 0.6
+		beam.LightInfluence = 0.2
+		beam.Texture = RIBBON_TEXTURE
+		beam.TextureMode = Enum.TextureMode.Wrap
+		beam.TextureLength = 7
+		beam.TextureSpeed = math.clamp(maxSpeed / 10, 0.3, 4)
+		beam.Parent = segment
+		markVisual(a0)
+		markVisual(a1)
+		markVisual(beam)
+	end
+end
+
 -- Shapes --------------------------------------------------------------------------
 
 local function decorateDirectional(part: BasePart)
@@ -350,7 +394,8 @@ local function getPathPoints(container: Instance): { BasePart }
 		end
 	end
 	table.sort(points, function(a, b)
-		return a.Name < b.Name
+		-- By number, not by name: "CurrentPoint_100" must come after "_99".
+		return (tonumber(a.Name:match("(%d+)$")) or 0) < (tonumber(b.Name:match("(%d+)$")) or 0)
 	end)
 	return points
 end
@@ -386,7 +431,12 @@ local function decoratePath(container: Instance)
 				segment.CFrame = CFrame.lookAt((a + b) / 2, b)
 				hidePart(segment)
 				segment.Parent = segmentsFolder
-				attachFlowEmitters(segment, intensity, maxSpeed)
+				-- Long smoothed paths have many short segments: particles on
+				-- every other one keep the density (and the cost) in check.
+				if #points <= 40 or i % 2 == 1 then
+					attachFlowEmitters(segment, intensity, maxSpeed)
+				end
+				attachRibbons(segment, i, length, width, intensity, maxSpeed)
 				if i == 1 then
 					attachBoundaryVeil(segment, "CurrentEntryVeil", -length / 2, intensity)
 				end
@@ -464,10 +514,98 @@ local function exampleCircular(props)
 	})
 end
 
+-- A path through `points`, optionally smoothed into a Catmull-Rom curve
+-- (props.Smooth = spacing in studs) and lifted clear of the seabed after
+-- smoothing (props.Lift = clearance), so the curve between control points
+-- never dips into the rock either. props.Riders: shoals of fish that ride
+-- it (client). props.Beacon: { title, subtitle } for an entry marker.
+local function catmullRom(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, t: number): Vector3
+	local t2, t3 = t * t, t * t * t
+	return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+end
+local function smoothPoints(points: { Vector3 }, spacing: number): { Vector3 }
+	local out = {}
+	for i = 1, #points - 1 do
+		local p0 = points[math.max(i - 1, 1)]
+		local p1, p2 = points[i], points[i + 1]
+		local p3 = points[math.min(i + 2, #points)]
+		local count = math.max(1, math.ceil((p2 - p1).Magnitude / spacing))
+		for k = 0, count - 1 do
+			table.insert(out, catmullRom(p0, p1, p2, p3, k / count))
+		end
+	end
+	table.insert(out, points[#points])
+	return out
+end
+
+local beaconsFolder: Folder
+local function entryBeacon(position: Vector3, direction: Vector3, title: string, subtitle: string)
+	local ring = Instance.new("Model")
+	ring.Name = "CurrentBeacon"
+	local frame = CFrame.lookAt(position, position + (direction.Magnitude > 0.01 and direction.Unit or Vector3.new(0, 0, -1)))
+	local core
+	for k = 1, 16 do
+		local a = k / 16 * math.pi * 2
+		local bead = Instance.new("Part")
+		bead.Name = "BeaconBead"
+		bead.Shape = Enum.PartType.Ball
+		bead.Size = Vector3.new(1.1, 1.1, 1.1)
+		bead.Material = Enum.Material.Neon
+		bead.Color = RIBBON_COLOR
+		bead.Anchored = true
+		bead.CanCollide = false
+		bead.CanQuery = false
+		bead.CanTouch = false
+		bead.CFrame = frame * CFrame.new(math.cos(a) * 7, math.sin(a) * 7, 0)
+		bead.Parent = ring
+		core = core or bead
+	end
+	local sign = Instance.new("BillboardGui")
+	sign.Name = "BeaconSign"
+	sign.Size = UDim2.fromOffset(260, 56)
+	sign.StudsOffsetWorldSpace = Vector3.new(0, 11, 0)
+	sign.MaxDistance = 260
+	sign.LightInfluence = 0
+	local list = Instance.new("UIListLayout")
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	list.Parent = sign
+	for index, line in ipairs({ { title, 30, RIBBON_COLOR }, { subtitle, 22, Color3.fromRGB(235, 245, 250) } }) do
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.new(1, 0, 0, line[2])
+		label.Font = index == 1 and Enum.Font.GothamBlack or Enum.Font.GothamBold
+		label.TextScaled = true
+		label.TextColor3 = line[3]
+		label.TextStrokeTransparency = 0.4
+		label.Text = line[1]
+		label.LayoutOrder = index
+		label.Parent = sign
+	end
+	sign.Adornee = core
+	sign.Parent = ring
+	local light = Instance.new("PointLight")
+	light.Color = RIBBON_COLOR
+	light.Range = 26
+	light.Brightness = 1.2
+	light.Parent = core
+	ring.Parent = beaconsFolder
+	CollectionService:AddTag(ring, GENERATED_TAG)
+	return ring
+end
+
 local function examplePath(props)
+	local points = props.Points
+	if props.Smooth then
+		points = smoothPoints(points, props.Smooth)
+	end
+	if props.Lift then
+		for i, point in ipairs(points) do
+			points[i] = props.Lift(point)
+		end
+	end
 	local model = Instance.new("Model")
 	model.Name = props.Name
-	for index, position in ipairs(props.Points) do
+	for index, position in ipairs(points) do
 		local point = Instance.new("Part")
 		point.Name = string.format("CurrentPoint_%02d", index)
 		point.Size = Vector3.new(2, 2, 2)
@@ -475,11 +613,15 @@ local function examplePath(props)
 		hidePart(point)
 		point.Parent = model
 	end
+	if props.Beacon and #points >= 2 then
+		entryBeacon(points[1], points[2] - points[1], props.Beacon[1], props.Beacon[2])
+	end
 	return generated(model, {
 		CurrentShape = "Path",
 		CurrentTier = props.Tier,
 		CurrentDisplayName = props.DisplayName,
 		CurrentWidth = props.Width,
+		CurrentRiders = props.Riders or 0,
 	})
 end
 
@@ -509,6 +651,15 @@ function Currents.Build(layout)
 		folder.Name = "Currents"
 		folder.Parent = Workspace
 		currentsFolder = folder
+	end
+
+	local existingBeacons = currentsFolder:FindFirstChild("Beacons")
+	if existingBeacons and existingBeacons:IsA("Folder") then
+		beaconsFolder = existingBeacons
+	else
+		beaconsFolder = Instance.new("Folder")
+		beaconsFolder.Name = "Beacons"
+		beaconsFolder.Parent = currentsFolder
 	end
 
 	-- Idempotent: clear what a previous build produced (examples + every
@@ -571,27 +722,6 @@ function Currents.Build(layout)
 		Points = descentPoints,
 	})
 
-	-- The pull into the caves: open water in front of the Porche du Récif,
-	-- flowing into its mouth.
-	local caves = layout:GetAnchor("Caves")
-	if caves then
-		for _, entrance in ipairs(caves.entrances) do
-			if entrance.id == "Porche" then
-				examplePath({
-					Name = "CourantDesGrottes",
-					DisplayName = "Courant des grottes",
-					Tier = "Medium",
-					Width = 10,
-					Points = {
-						aboveGround(entrance.mouth - entrance.inward * 90 + Vector3.new(0, 6, 0), 14),
-						aboveGround(entrance.mouth - entrance.inward * 40 + Vector3.new(0, 2, 0), 10),
-						entrance.mouth + entrance.inward * 2,
-					},
-				})
-			end
-		end
-	end
-
 	-- The Épave vortex swirls in the open water just off the wreck's stern,
 	-- downslope (the anchor Shipwreck publishes from its real hull).
 	local vortexPosition = layout:GetAnchor("WreckVortex") or Vector3.new(420, -300, 300)
@@ -653,6 +783,156 @@ function Currents.Build(layout)
 			Width = 36,
 			Height = 24,
 			Tier = "Strong",
+		})
+	end
+
+	-- The current network ------------------------------------------------------
+	-- A circulation that ties the whole map together, like the great ocean
+	-- currents: Le Grand Courant runs round the volcano at mid-depth; ramps
+	-- lead from it to every site (and one from the hub's diving platform
+	-- down onto it); upwellings carry divers back up from the deep; and
+	-- inside the volcano the water breathes through the lava tubes -- down
+	-- the lagoon shaft, up from the abyss, out to the kelp and the wreck.
+	local lift = function(clearance: number)
+		return function(point: Vector3): Vector3
+			return aboveGround(point, clearance)
+		end
+	end
+
+	-- Le Grand Courant: a closed loop, clockwise seen from above, swinging
+	-- wide round the Sirène's ledge (and over her masts' reach).
+	local LOOP_Y = -190
+	local function loopRadius(bearing: number): number
+		local d = math.abs(((bearing - 35 + 180) % 360) - 180)
+		return 470 + 95 * math.clamp(1 - (d - 45) / 30, 0, 1)
+	end
+	local function loopPoint(bearing: number): Vector3
+		return onBearing(bearing, loopRadius(bearing), LOOP_Y)
+	end
+	local loop = {}
+	for bearing = 0, 360, 22.5 do
+		table.insert(loop, loopPoint(bearing % 360))
+	end
+	examplePath({
+		Name = "GrandCourant",
+		DisplayName = "Le Grand Courant",
+		Tier = "FastLane",
+		Width = 16,
+		Points = loop,
+		Smooth = 24,
+		Lift = lift(20),
+		Riders = 6,
+		Beacon = { "LE GRAND COURANT", "↻ Le tour du volcan" },
+	})
+
+	-- From the hub's diving platform straight down onto the loop.
+	local hub = layout:GetAnchor("Hub")
+	if hub then
+		local b = math.deg(math.atan2(hub.dockEnd.Z, hub.dockEnd.X))
+		examplePath({
+			Name = "PlongeeDuPonton",
+			DisplayName = "Plongée du ponton",
+			Tier = "Strong",
+			Width = 12,
+			Points = { hub.dockEnd + Vector3.new(0, -5, 0), onBearing(b, 205, -30), onBearing(b, 265, -80), onBearing(b, 340, -140), onBearing(b, 420, -178), loopPoint(b + 8) },
+			Smooth = 20,
+			Lift = lift(18),
+			Riders = 2,
+			Beacon = { "PLONGÉE DU PONTON", "↓ vers Le Grand Courant" },
+		})
+	end
+
+	-- Ramps off the loop to the sites.
+	local ramps = {
+		{ name = "BretelleEpave", display = "Bretelle → La Sirène Noire", points = { loopPoint(58), onBearing(47, 530, -250), onBearing(38, 498, -292) }, beacon = "→ Cimetière de la Sirène" },
+		{ name = "BretelleImperatrice", display = "Bretelle → L'Impératrice", points = { loopPoint(66), onBearing(55, 630, -320), onBearing(46, 675, -400), onBearing(43, 690, -440) }, beacon = "→ L'Impératrice" },
+		{ name = "BretelleFaille", display = "Bretelle → Faille abyssale", points = { loopPoint(292), onBearing(298, 560, -320), onBearing(300, 630, -410) }, beacon = "→ Faille abyssale" },
+	}
+	local caves = layout:GetAnchor("Caves")
+	if caves then
+		for _, entrance in ipairs(caves.entrances) do
+			if entrance.id == "Porche" then
+				local b = math.deg(math.atan2(entrance.mouth.Z, entrance.mouth.X))
+				table.insert(ramps, { name = "CourantDesGrottes", display = "Courant des grottes", points = { loopPoint(b + 12), onBearing(b + 4, 380, -135), entrance.mouth - entrance.inward * 40 + Vector3.new(0, 2, 0), entrance.mouth + entrance.inward * 2 }, beacon = "→ Grottes de l'Éperon" })
+			end
+		end
+	end
+	for _, ramp in ipairs(ramps) do
+		examplePath({
+			Name = ramp.name,
+			DisplayName = ramp.display,
+			Tier = "Strong",
+			Width = 11,
+			Points = ramp.points,
+			Smooth = 20,
+			Lift = lift(14),
+			Riders = 1,
+			Beacon = { "BRETELLE", ramp.beacon },
+		})
+	end
+
+	-- Upwellings: the quick, safe way home from the deep, rising along the
+	-- flank to just under the reef crest.
+	for _, rise in ipairs({ { "RemonteeDesAbysses", "Remontée des abysses", 300, 600, -430 }, { "RemonteeImperatrice", "Remontée de l'Impératrice", 78, 640, -440 } }) do
+		local b = rise[3]
+		examplePath({
+			Name = rise[1],
+			DisplayName = rise[2],
+			Tier = "Strong",
+			Width = 12,
+			Points = { onBearing(b, rise[4], rise[5]), onBearing(b, rise[4] - 110, -340), onBearing(b, 400, -240), onBearing(b, 310, -140), onBearing(b, 245, -40) },
+			Smooth = 20,
+			Lift = lift(22),
+			Riders = 1,
+			Beacon = { "REMONTÉE", "↑ vers le récif" },
+		})
+	end
+
+	-- The volcano breathing through its lava tubes (see LavaTubes).
+	local network = layout:GetAnchor("Network")
+	if network then
+		local function tubePath(id: string, inward: boolean, name: string, display: string, tier: string, beacon: string)
+			local tube = network.tubes[id]
+			if not tube then
+				return
+			end
+			local points = {}
+			for i = 1, #tube.samples, 5 do
+				table.insert(points, tube.samples[i])
+			end
+			if points[#points] ~= tube.samples[#tube.samples] then
+				table.insert(points, tube.samples[#tube.samples])
+			end
+			if inward then
+				local reversed = {}
+				for i = #points, 1, -1 do
+					table.insert(reversed, points[i])
+				end
+				points = reversed
+			end
+			examplePath({
+				Name = name,
+				DisplayName = display,
+				Tier = tier,
+				Width = math.max(tube.spec.radius - 3, 6),
+				Points = points,
+				Riders = 1,
+				Beacon = { "RÉSEAU DU VOLCAN", beacon },
+			})
+		end
+		tubePath("PuitsDuLagon", true, "ChuteDuPuits", "Chute du Puits", "Strong", "↓ vers le Cœur du volcan")
+		tubePath("TubeAbysses", true, "SouffleDesAbysses", "Souffle des abysses", "FastLane", "↑ vers le Cœur du volcan")
+		tubePath("TubeForet", false, "CourantDeLaForet", "Courant de la forêt", "Strong", "→ Forêt de kelp")
+		tubePath("TubeEpave", false, "CourantDeLEpave", "Courant de l'épave", "Strong", "→ Cimetière de la Sirène")
+		tubePath("TubeKelpDore", true, "CourantDuKelpDore", "Courant du kelp doré", "Medium", "→ Cœur du volcan")
+		tubePath("TubeEperon", false, "CourantDeLEperon", "Courant de l'Éperon", "Medium", "→ Salle des Cristaux")
+		exampleCircular({
+			Name = "TourbillonDuCoeur",
+			DisplayName = "Tourbillon du Cœur",
+			Position = network.heart.center + Vector3.new(0, 10, 0),
+			Radius = 40,
+			Spin = -1,
+			Tier = "Weak",
 		})
 	end
 

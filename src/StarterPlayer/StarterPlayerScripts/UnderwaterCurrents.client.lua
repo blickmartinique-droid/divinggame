@@ -80,7 +80,8 @@ local function getPathPoints(container: Instance): { BasePart }
 		end
 	end
 	table.sort(points, function(a, b)
-		return a.Name < b.Name
+		-- By number, not by name: "CurrentPoint_100" must come after "_99".
+		return (tonumber(a.Name:match("(%d+)$")) or 0) < (tonumber(b.Name:match("(%d+)$")) or 0)
 	end)
 	return points
 end

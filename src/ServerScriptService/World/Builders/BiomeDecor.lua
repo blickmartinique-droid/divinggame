@@ -418,9 +418,10 @@ function BiomeDecor.Build(layout)
 			table.insert(wreckBoxes, volume)
 		end
 	end
+	local network = layout:GetAnchor("Network")
 	local function blocked(position: Vector3): boolean
-		if caves then
-			for _, entrance in ipairs(caves.entrances) do
+		for _, anchor in ipairs({ caves, network }) do
+			for _, entrance in ipairs(anchor and anchor.entrances or {}) do
 				if (position - entrance.mouth).Magnitude < entrance.clearRadius then
 					return true
 				end

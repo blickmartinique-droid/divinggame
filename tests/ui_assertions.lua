@@ -315,6 +315,38 @@ check("seagull circles high above", gullBody.Position.Y > 30 and math.abs(Vector
 check("seagull wings follow the body", (gullModel.WingLeft.Position - gullBody.Position).Magnitude < 1.6)
 check("dolphin swims round the lagoon", math.abs(Vector3.new(dolphinBody.Position.X, 0, dolphinBody.Position.Z).Magnitude - 150) < 1, dolphinBody.Position)
 
+section("Current riders")
+local ridersOk, ridersErr = pcall(function()
+	local currentsFolder = Instance.new("Folder")
+	currentsFolder.Name = "Currents"
+	currentsFolder.Parent = Workspace
+	local path = Instance.new("Model")
+	path.Name = "TestLane"
+	path:SetAttribute("CurrentShape", "Path")
+	path:SetAttribute("CurrentRiders", 1)
+	path:SetAttribute("CurrentMaxSpeed", 20)
+	path:SetAttribute("CurrentWidth", 12)
+	for index, position in ipairs({ Vector3.new(0, -20, 0), Vector3.new(0, -20, -100), Vector3.new(60, -20, -160) }) do
+		local point = Instance.new("Part")
+		point.Name = string.format("CurrentPoint_%03d", index)
+		point.Position = position
+		point.Parent = path
+	end
+	path.Parent = currentsFolder
+	Workspace:SetAttribute("WorldReady", true)
+	camera.CFrame = CFrame.new(Vector3.new(0, -15, -40))
+	RUN_SCRIPT("StarterPlayer", "StarterPlayerScripts", "CurrentRiders")
+end)
+check("CurrentRiders starts", ridersOk, ridersErr)
+local riders = Workspace:FindFirstChild("CurrentRiders")
+check("a shoal rides the test lane", riders and #riders:GetChildren() > 0, riders and #riders:GetChildren())
+local before = riders:GetChildren()[1]:GetPivot().Position
+ridersOk, ridersErr = pcall(function()
+	for _ = 1, 60 do frame() end
+end)
+local after = riders:GetChildren()[1]:GetPivot().Position
+check("riders move along the current", ridersOk and (after - before).Magnitude > 5 and after.Z < before.Z + 1, ridersErr or tostring(after))
+
 section("Death")
 ok, err = pcall(function()
 	player:SetAttribute("LastDeathCause", "Attaqué par : Requin de récif")

@@ -124,6 +124,74 @@ if caves then
 	check("cave floor props rest on rock/sand", floating <= 3, floating)
 end
 
+section("Volcano network")
+local network = layout:GetAnchor("Network")
+check("lava tube network built", network ~= nil)
+if network then
+	for _, chamber in ipairs(network.chambers) do
+		check(chamber.id .. ": hall is open water", isWater(chamber.center))
+		check(chamber.id .. ": sand floor", TERRAIN_MATERIAL_AT(chamber.floorProbe) == "Sand", TERRAIN_MATERIAL_AT(chamber.floorProbe))
+		local roofed = 0
+		for i = 0, 7 do
+			local a = i * math.pi / 4
+			if TERRAIN_SOLID_AT(chamber.center + Vector3.new(math.cos(a) * chamber.radius * 0.3, chamber.radius + 10, math.sin(a) * chamber.radius * 0.3)) then roofed += 1 end
+		end
+		check(chamber.id .. ": under a rock roof", roofed >= 6, roofed)
+	end
+	for id, tube in pairs(network.tubes) do
+		local blocked, roofless, interior = 0, 0, 0
+		local mouth
+		for _, e in ipairs(network.entrances) do if e.id == id then mouth = e.mouth end end
+		for i, sample in ipairs(tube.samples) do
+			if not isWater(sample) then blocked += 1 end
+			-- Away from its mouth, a tube runs inside the rock.
+			if not mouth or (sample - mouth).Magnitude > tube.spec.radius * 4 then
+				local inHall = false
+				for _, chamber in ipairs(network.chambers) do
+					if (sample - chamber.center).Magnitude < chamber.radius * 1.3 then inHall = true end
+				end
+				for _, chamber in ipairs(caves.chambers) do
+					if (sample - chamber.center).Magnitude < chamber.radius * 1.3 then inHall = true end
+				end
+				if not inHall and i > 3 then
+					interior += 1
+					-- Rock on both sides of the tube (works for shafts too).
+					local ahead = (tube.samples[math.min(i + 1, #tube.samples)] - tube.samples[i - 1]).Unit
+					local side = ahead:Cross(Vector3.new(0, 1, 0))
+					side = side.Magnitude > 0.2 and side.Unit or Vector3.new(1, 0, 0)
+					local reach = tube.radii[i] + 6
+					if not (TERRAIN_SOLID_AT(sample + side * reach) and TERRAIN_SOLID_AT(sample - side * reach)) then roofless += 1 end
+				end
+			end
+		end
+		check("tube " .. id .. ": clear end to end", blocked == 0, blocked)
+		check("tube " .. id .. ": inside the rock", interior > 0 and roofless <= interior * 0.1, roofless .. "/" .. interior)
+	end
+	for _, entrance in ipairs(network.entrances) do
+		local outside = entrance.mouth - entrance.inward * 20
+		check("network entrance " .. entrance.id .. ": opens to open water", isWater(entrance.mouth) and (isWater(outside) or outside.Y > 0), outside)
+	end
+	local lagoon
+	for _, e in ipairs(network.entrances) do if e.id == "PuitsDuLagon" then lagoon = e end end
+	check("the lagoon shaft opens in the lagoon, off the beach", lagoon and lagoon.mouth.Y > -20 and Vector3.new(lagoon.mouth.X, 0, lagoon.mouth.Z).Magnitude < 140, lagoon and lagoon.mouth)
+	check("no water raised above the sea by the shaft", not isWater(Vector3.new(lagoon.mouth.X, 2, lagoon.mouth.Z)))
+	-- The Éperon tube really joins the Salle des Cristaux.
+	local eperon = network.tubes.TubeEperon
+	local last = eperon.samples[#eperon.samples]
+	local cristaux
+	for _, chamber in ipairs(caves.chambers) do if chamber.spec.id == "Cristaux" then cristaux = chamber end end
+	check("Éperon tube ends in the Salle des Cristaux", (last - cristaux.center).Magnitude < 1 and isWater(eperon.samples[#eperon.samples - 8]))
+	local doors = 0
+	for _ in pairs(network.heartDoors) do doors += 1 end
+	check("an arch over every tube in the heart", doors == 6, doors)
+	local temple = Workspace.World.Underwater.ReseauDuVolcan.Temple
+	local base = temple:FindFirstChild("TempleTier")
+	check("temple stands on the heart's floor", base and math.abs(base.Position.Y - base.Size.Y / 2 - network.heart.floorY) < 0.5)
+	check("temple has its columns and altar", temple:FindFirstChild("Column") ~= nil and temple:FindFirstChild("Orb") ~= nil)
+	local beacons = #Workspace.World.Underwater.ReseauDuVolcan.Beacons:GetChildren()
+	check("rune beacons line the tubes", beacons > 40, beacons)
+end
+
 section("Shipwreck")
 local ship = Workspace.World.Underwater.WreckZone:FindFirstChild("Shipwreck")
 check("shipwreck built", ship ~= nil)
@@ -274,6 +342,11 @@ check("lagoon named", biomeAt(Vector3.new(120, -10, 0)) == "Le Lagon", biomeAt(V
 if caves then
 	check("cave hall named", biomeAt(caves.chambers[2].center) == caves.chambers[2].spec.name, biomeAt(caves.chambers[2].center))
 end
+if network then
+	check("volcano heart named", biomeAt(network.heart.center) == "Le Cœur du volcan", biomeAt(network.heart.center))
+	local mid = network.tubes.TubeForet.samples[math.floor(#network.tubes.TubeForet.samples / 2)]
+	check("lava tubes named", biomeAt(mid) == "Tunnels de lave", biomeAt(mid))
+end
 local rift = layout:GetAnchor("RiftFrame")
 check("rift named", biomeAt(rift.center + Vector3.new(0, 60, 0)) == "Faille abyssale", biomeAt(rift.center + Vector3.new(0, 60, 0)))
 check("open water named", biomeAt(Vector3.new(-700, -250, -700)) == "Le Grand Bleu", biomeAt(Vector3.new(-700, -250, -700)))
@@ -287,31 +360,67 @@ end
 
 section("Currents")
 for _, current in ipairs(Workspace.Currents:GetChildren()) do
+	if not current:GetAttribute("CurrentShape") then continue end
 	local points = {}
 	if current:GetAttribute("CurrentShape") == "Path" then
 		local parts = {}
 		for _, c in ipairs(current:GetChildren()) do if c.Name:match("^CurrentPoint") then table.insert(parts, c) end end
-		table.sort(parts, function(a, b) return a.Name < b.Name end)
+		table.sort(parts, function(a, b) return tonumber(a.Name:match("(%d+)$")) < tonumber(b.Name:match("(%d+)$")) end)
 		for i = 2, #parts do for t = 0, 1, 0.05 do table.insert(points, parts[i - 1].Position:Lerp(parts[i].Position, t)) end end
 	else
 		table.insert(points, current.Position)
 	end
 	local blocked, inWreck = 0, 0
 	for _, p in ipairs(points) do
-		if not isWater(p) and not (p.Y > 0 and not TERRAIN_SOLID_AT(p)) then blocked += 1 end
+		if not isWater(p) and not (p.Y > 0 and not TERRAIN_SOLID_AT(p)) then
+			blocked += 1
+			if blocked <= 3 then print("  blocked", current.Name, p, TERRAIN_MATERIAL_AT(p), layout:GroundHeight(p.X, p.Z)) end
+		end
 		for _, volume in ipairs(layout.reserved) do
 			if volume.name == "Shipwreck" or volume.name:sub(1, 10) == "Graveyard_" then
 				local l = volume.cframe:PointToObjectSpace(p)
-				if math.abs(l.X) < volume.half.X and math.abs(l.Y) < volume.half.Y and math.abs(l.Z) < volume.half.Z then inWreck += 1 end
+				if math.abs(l.X) < volume.half.X and math.abs(l.Y) < volume.half.Y and math.abs(l.Z) < volume.half.Z then
+					inWreck += 1
+					if inWreck <= 2 then print("  in wreck", current.Name, volume.name, p) end
+				end
 			end
 		end
 	end
 	check(current.Name .. ": flows through water only", blocked == 0, blocked)
 	check(current.Name .. ": stays out of the wreck", inWreck == 0, inWreck)
 end
-for _, name in ipairs({ "EpaveUpdraft", "DescenteDuTombant", "CourantDesGrottes", "CourantDeLaFaille", "RecifFastLane" }) do
+for _, name in ipairs({ "EpaveUpdraft", "DescenteDuTombant", "CourantDesGrottes", "CourantDeLaFaille", "RecifFastLane",
+	"GrandCourant", "PlongeeDuPonton", "BretelleEpave", "BretelleImperatrice", "BretelleFaille", "RemonteeDesAbysses", "RemonteeImperatrice",
+	"ChuteDuPuits", "SouffleDesAbysses", "CourantDeLaForet", "CourantDeLEpave", "CourantDuKelpDore", "CourantDeLEperon", "TourbillonDuCoeur" }) do
 	check(name .. " placed", Workspace.Currents:FindFirstChild(name) ~= nil)
 end
+local function pathPoints(name)
+	local parts = {}
+	for _, c in ipairs(Workspace.Currents[name]:GetChildren()) do if c.Name:match("^CurrentPoint") then table.insert(parts, c) end end
+	table.sort(parts, function(a, b) return tonumber(a.Name:match("(%d+)$")) < tonumber(b.Name:match("(%d+)$")) end)
+	return parts
+end
+local loopPoints = pathPoints("GrandCourant")
+local inner = math.huge
+for _, p in ipairs(loopPoints) do inner = math.min(inner, Vector3.new(p.Position.X, 0, p.Position.Z).Magnitude) end
+check("Grand Courant is a closed loop round the volcano", (loopPoints[1].Position - loopPoints[#loopPoints].Position).Magnitude < 1 and inner > 430 and #loopPoints > 100, inner)
+local rising = pathPoints("RemonteeDesAbysses")
+check("upwelling rises from the deep to the reef", rising[#rising].Position.Y - rising[1].Position.Y > 300, rising[#rising].Position.Y - rising[1].Position.Y)
+local ponton = pathPoints("PlongeeDuPonton")
+local hubAnchor = layout:GetAnchor("Hub")
+check("the dive current starts at the hub's platform", (Vector3.new(ponton[1].Position.X, 0, ponton[1].Position.Z) - Vector3.new(hubAnchor.dockEnd.X, 0, hubAnchor.dockEnd.Z)).Magnitude < 2 and ponton[1].Position.Y > -8)
+local ribbons, segments = 0, 0
+for _, current in ipairs(Workspace.Currents:GetChildren()) do
+	local folder = current:FindFirstChild("PathSegments")
+	if folder then
+		for _, segment in ipairs(folder:GetChildren()) do
+			segments += 1
+			for _, child in ipairs(segment:GetChildren()) do if child.ClassName == "Beam" then ribbons += 1 end end
+		end
+	end
+end
+check("every path segment carries flow ribbons", ribbons == segments * 3, ribbons .. "/" .. segments * 3)
+check("entry beacons mark the network", #Workspace.Currents.Beacons:GetChildren() >= 14, #Workspace.Currents.Beacons:GetChildren())
 
 section("Decor")
 local decorFloating = 0

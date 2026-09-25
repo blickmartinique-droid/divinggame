@@ -23,7 +23,7 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 - **Construction du monde (ordre garanti)** — `World/WorldBootstrap.server.lua`
   est le seul script qui construit le monde : il exécute les modules de
   `World/Builders/` dans un ordre fixe (`Ocean` → `Seabed` → `Caves` →
-  `Shipwreck` → `WreckGraveyard` → `Liner` → `Hub` → `IslandLife` → `Currents` →
+  `LavaTubes` → `Shipwreck` → `WreckGraveyard` → `Liner` → `Hub` → `IslandLife` → `Currents` →
   `BiomeDecor` → `Biomes`) puis lève
   `Workspace.WorldReady`, que les spawners attendent. Avant, ces étapes
   étaient des scripts indépendants sans ordre garanti par Roblox (le
@@ -131,7 +131,20 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   (entrée/sortie progressives, direction lissée, recentrage sur la trajectoire,
   plafond de sécurité) et la publie via `CurrentField` (vitesse, courant
   dominant, signaux `Entered`/`Exited`/`Changed`). `CurrentVisualAnimator.client.lua`
-  anime les anneaux de trajectoire et les vortex côté client ;
+  anime les anneaux de trajectoire et les vortex côté client ; les
+  trajectoires sont **lissées en splines** et portent des **rubans de flux**
+  (trois bandes scintillantes qui s'enroulent autour de l'axe, texture qui
+  défile à la vitesse du courant), avec une **balise lumineuse** et un
+  panneau à chaque entrée ; `CurrentRiders.client.lua` fait voyager des
+  **bancs de poissons** dans les courants. **Le réseau de courants** :
+  **Le Grand Courant** (voie rapide en boucle autour du volcan, à ~190 m),
+  la **Plongée du ponton** qui part de la plateforme du hub et y descend,
+  des **bretelles** vers la Sirène Noire, L'Impératrice, la Faille et les
+  grottes, des **remontées** des abysses et de L'Impératrice jusqu'au
+  récif, et la **respiration du volcan** dans les tunnels de lave (chute du
+  Puits vers le Cœur, souffle des abysses qui remonte en voie rapide,
+  courants vers la forêt, l'épave, le kelp doré et l'Éperon, tourbillon
+  dans le Cœur) ;
   `CurrentFeedback.client.lua` gère le léger élargissement du FOV, les traits de
   vitesse et le son optionnel.
 - **Créatures** — `CreaturesConfig.lua` (espèces : profondeur, rareté,
@@ -146,7 +159,13 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   correspondent 1:1 aux 5 modèles du pack « Archipel des Profondeurs V2 » :
   `PoissonRecif`, `TortueMarine`, `RaieManta`, `RequinRecif`,
   `MeduseLumineuse`. **Tant que les FBX ne sont pas importés**, chaque animal
-  est dessiné par `CreatureBodies.lua` : un vrai corps détaillé par espèce
+  est dessiné par `CreatureBodies.lua` : corps **lissés** (une suite
+  d'ellipsoïdes qui suit un profil effilé, ventre plus clair), **nageoires,
+  queues et ailes en vrais triangles** (paires de wedges), yeux avec iris,
+  pupille et reflet, nage **articulée** (le corps fléchit avant la queue,
+  l'aile de la raie ondule jusqu'à la pointe, la nageoire de la tortue plie
+  au coude, les tentacules de la méduse ondulent en trois segments) ; un
+  vrai corps détaillé par espèce
   (poisson tropical rayé en 5 palettes — clown, chirurgien bleu, jaune,
   ange, gramma —, requin gris à pointes noires, raie manta à chevrons
   blancs, tortue à carapace écaillée, méduse translucide lumineuse à
@@ -222,6 +241,21 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   puis rempli d'eau : avec les *Shorelines* (défaut Roblox), un simple
   remplissage `Water` laisse la roche en place. Aucun décor ne se pose
   dans une bouche de grotte.
+- **Réseau du Volcan** — `Builders/LavaTubes.lua` : l'île est un ancien
+  volcan et ses **tunnels de lave** forment le vrai réseau sous-marin. Sous
+  l'île, une salle immense, **le Cœur du volcan**, abrite un **temple
+  englouti** (trois gradins, colonnes debout, brisées ou tombées en
+  tambours, statues gardiennes aux yeux luisants, autel et orbe tournant,
+  fissures de lave dans le sable). Six tunnels en partent : le **Puits du
+  Lagon** (un second trou bleu juste au large de la plage, l'entrée depuis
+  le hub), le tunnel de l'**Éperon** (rejoint la Salle des Cristaux), celui
+  de l'**Épave** (par la **Galerie des Échos** et ses cristaux pâles), de la
+  **Forêt de kelp**, du **Kelp doré**, et celui des **Abysses** (par la
+  **Salle des Orgues** et ses colonnes de basalte) jusqu'à la faille.
+  Parois en basalte, **arches de pierre** à runes lumineuses et panneau à
+  chaque ouverture (dehors comme dans le Cœur), **balises runiques** tout le
+  long des tunnels pour ne jamais se perdre. Butin dans le temple et les
+  salles, tortues, requins et méduses.
 - **Biomes** — `Builders/BiomeDecor.lua` : récif du lagon (coraux branchus,
   cerveaux, tables, éventails, éponges, anémones, oursins, étoiles de mer,
   bénitiers, herbiers, kelp), gorgones et éponges sur le tombant, **forêt de
@@ -328,8 +362,8 @@ retire pas, seul un remplissage `Air` creuse) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 159 vérifications
-luau tests/ui_test.lua         # 54 vérifications
+luau tests/world_test.lua      # 242 vérifications
+luau tests/ui_test.lua         # 57 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
@@ -343,7 +377,12 @@ luau tests/ui_test.lua         # 54 vérifications
   vers le haut, décors posés sur la roche ; coque
   bordée, quille posée dans le sable, entrées de l'épave en eau libre ;
   épaves du cimetière posées sur la corniche, sans chevaucher la Sirène,
-  brick à l'envers ouvert sur l'eau ; paquebot (taille, quille dans la
+  brick à l'envers ouvert sur l'eau ; réseau du volcan (salles fermées
+  sous la roche, tunnels dégagés et dans la roche, sorties en eau libre,
+  puits du lagon sans eau au-dessus de la mer, tunnel relié aux Cristaux,
+  temple posé au sol, arches, balises) ; réseau de courants (boucle fermée
+  autour du volcan, remontées qui montent, départ au ponton, rubans et
+  balises) ; paquebot (taille, quille dans la
   vase, ouvertures, rien ne le traverse) ; biomes nommés aux bons endroits ;
   hub (pilotis jusqu'au sol, bateau à flot, rien dans les bâtiments), vie
   sur l'île sur la terre ferme, achats/équipement (prix, effets,

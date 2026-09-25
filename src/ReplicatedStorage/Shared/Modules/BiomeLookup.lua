@@ -51,6 +51,11 @@ local function contains(entry, p: Vector3): boolean
 		return p.Y >= entry.MinY and p.Y <= entry.MaxY and dx * dx + dz * dz <= entry.Radius * entry.Radius
 	elseif entry.Shape == "Sphere" then
 		return (p - entry.Center).Magnitude <= entry.Radius
+	elseif entry.Shape == "Capsule" then
+		local a, b = entry.A, entry.B
+		local ab = b - a
+		local t = math.clamp((p - a):Dot(ab) / math.max(ab:Dot(ab), 1e-6), 0, 1)
+		return (p - (a + ab * t)).Magnitude <= entry.Radius
 	elseif entry.Shape == "Box" then
 		local l = entry.CFrame:PointToObjectSpace(p)
 		local h = entry.Size / 2

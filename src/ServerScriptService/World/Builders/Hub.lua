@@ -441,6 +441,14 @@ function Hub.Build(layout)
 			end
 		end
 	end
+	local network = layout:GetAnchor("Network")
+	if network then
+		for _, entrance in ipairs(network.entrances) do
+			if entrance.id == "PuitsDuLagon" then
+				table.insert(destinations, { "🌋 Réseau du Volcan", entrance.mouth })
+			end
+		end
+	end
 	local site = layout:GetAnchor("WreckSite")
 	if site then
 		table.insert(destinations, { "⚓ La Sirène Noire", site.position })

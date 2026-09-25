@@ -41,7 +41,8 @@ local function getPathPoints(container: Instance): { Vector3 }
 		end
 	end
 	table.sort(parts, function(a, b)
-		return a.Name < b.Name
+		-- By number, not by name: "CurrentPoint_100" must come after "_99".
+		return (tonumber(a.Name:match("(%d+)$")) or 0) < (tonumber(b.Name:match("(%d+)$")) or 0)
 	end)
 	local points = {}
 	for _, part in ipairs(parts) do
