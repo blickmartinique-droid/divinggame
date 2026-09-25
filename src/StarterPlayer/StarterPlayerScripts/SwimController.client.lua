@@ -468,7 +468,9 @@ local function onCharacterAdded(character)
 		-- calculation below depends on -- so sprinting changes velocity
 		-- magnitude only, never facing or orientation.
 		local sprintSpeedScale = 1 + sprintFactor * (SPRINT_SPEED_MULTIPLIER - 1)
-		local fullVelocity = moveDirection3D * MovementConfig.BaseSwimSpeed * sprintSpeedScale
+		-- Fins (EquipmentService) make the diver faster.
+		local finScale = player:GetAttribute("SwimSpeedMultiplier") or 1
+		local fullVelocity = moveDirection3D * MovementConfig.BaseSwimSpeed * sprintSpeedScale * finScale
 			+ Vector3.new(0, manualVerticalSpeed, 0)
 		-- Underwater currents (UnderwaterCurrents.client.lua) are added in
 		-- last, as one extra term on top of the player's own intended

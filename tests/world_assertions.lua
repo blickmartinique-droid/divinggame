@@ -375,6 +375,131 @@ for _, s in ipairs(CreaturesConfig.Species) do
 end
 check("no creature spawned inside rock", inRock == 0, inRock)
 
+section("Hub")
+local hub = layout:GetAnchor("Hub")
+check("hub built", hub ~= nil and Workspace:FindFirstChild("Hub") ~= nil)
+if hub then
+	check("shop counter opens the shop", hub.shopPrompt:GetAttribute("OpensShop") == true)
+	local floating = 0
+	for _, p in ipairs(Workspace.Hub:GetDescendants()) do
+		if p.Name == "Piling" or p.Name == "Stilt" then
+			local bottom = p.Position.Y - p.Size.X / 2
+			if bottom > layout:GroundHeight(p.Position.X, p.Position.Z) + 0.1 then floating += 1 end
+		end
+	end
+	check("every piling and stilt reaches the ground", floating == 0, floating)
+	local boatBottom = Workspace.Hub.Ponton.BateauDePlongee.HullBottom
+	local keel = boatBottom.Position.Y - boatBottom.Size.Y / 2
+	check("dive boat floats at the surface", keel < 0 and keel > -3 and isWater(boatBottom.Position - Vector3.new(0, 0.5, 0)), keel)
+	check("lighthouse stands on the island", layout:GroundHeight(hub.lighthouse.X, hub.lighthouse.Z) >= 3)
+	local signs = 0
+	for _, p in ipairs(Workspace.Hub.Place:GetChildren()) do
+		if p.Name == "SignBoard" then signs += 1 end
+	end
+	check("signpost points to the dive sites", signs >= 4, signs)
+	local clutter = 0
+	for _, p in ipairs(Workspace.BeachProps:GetChildren()) do
+		local l = hub.diveCentre:PointToObjectSpace(p.Position)
+		if math.abs(l.X) < 20 and math.abs(l.Z) < 13 and l.Y < 12 then clutter += 1 end
+	end
+	check("no palm or rock inside the dive centre", clutter == 0, clutter)
+end
+
+section("Island life")
+local life = Workspace:FindFirstChild("IslandLife")
+check("island life planted", life ~= nil and #life.Flora:GetChildren() > 300, life and #life.Flora:GetChildren())
+local wet, inBuildings = 0, 0
+for _, p in ipairs(life.Flora:GetChildren()) do
+	if p.Name == "PalmTrunk" or p.Name == "HibiscusBush" or p.Name == "BananaStem" then
+		local g = layout:GroundHeight(p.Position.X, p.Position.Z)
+		if g < 3 then wet += 1 end
+		for _, volume in ipairs(layout.reserved) do
+			if volume.kind == "box" and volume.name:match("^Hub_") then
+				local l = volume.cframe:PointToObjectSpace(p.Position)
+				if math.abs(l.X) < volume.half.X and math.abs(l.Y) < volume.half.Y and math.abs(l.Z) < volume.half.Z then inBuildings += 1 end
+			end
+		end
+	end
+end
+check("island plants grow on dry land", wet == 0, wet)
+check("no plant growing through the hub", inBuildings == 0, inBuildings)
+local CollectionService = game:GetService("CollectionService")
+for _, tag in ipairs({ "Crab", "Seagull", "Butterfly", "Parrot", "Dolphin" }) do
+	local animals, rigged = 0, 0
+	for _, m in ipairs(CollectionService:GetTagged(tag)) do
+		animals += 1
+		if m.PrimaryPart then rigged += 1 end
+	end
+	check(tag .. ": on the island, ready to animate", animals > 0 and rigged == animals, animals)
+end
+
+section("Equipment")
+do
+	local Players = game:GetService("Players")
+	local player = Instance.new("Player")
+	player.Name = "Diver"
+	player.UserId = 4242
+	player.CharacterAdded = Instance.new("BindableEvent").Event
+	local function num(name, value)
+		local v = Instance.new("NumberValue")
+		v.Name = name
+		v.Value = value
+		v.Parent = player
+		return v
+	end
+	local maxOxygen = num("MaxOxygen", 60)
+	local drain = num("OxygenDrainPerSecond", 1)
+	local oxygen = num("Oxygen", 60)
+	num("Depth", 0)
+	local character = Instance.new("Model")
+	for name, size in pairs({ Head = Vector3.new(1.2, 1.2, 1.2), UpperTorso = Vector3.new(2, 1.6, 1), LowerTorso = Vector3.new(2, 0.4, 1), LeftFoot = Vector3.new(1, 0.3, 1), RightFoot = Vector3.new(1, 0.3, 1), LeftUpperArm = Vector3.new(1, 1.2, 1) }) do
+		local limb = Instance.new("Part")
+		limb.Name = name
+		limb.Size = size
+		limb.Color = Color3.fromRGB(200, 150, 110)
+		limb.Parent = character
+	end
+	local shirt = Instance.new("Shirt")
+	shirt.Parent = character
+	player.Character = character
+	table.insert(PLAYERS, player)
+	RUN_SCRIPT("ServerScriptService", "Player", "EquipmentService")
+	Players.PlayerAdded:Fire(player)
+	local handler = ReplicatedStorage.EquipmentRequest.OnServerInvoke
+	local coins = player.leaderstats["Pièces"]
+	local function ask(action, id)
+		CLOCK += 1
+		return handler(player, action, id)
+	end
+	check("starts with the club's gear", player:GetAttribute("Equipped_Tank") == "TankStarter" and maxOxygen.Value == 60)
+	check("tank on the back from the start", character.DiveGear:FindFirstChild("GearTank") ~= nil)
+	check("cannot buy without the Pièces", ask("Buy", "Tank15").ok == false)
+	coins.Value = 1000
+	local bought = ask("Buy", "Tank15")
+	check("buys a tank", bought.ok == true, bought.message)
+	check("price taken", coins.Value == 400, coins.Value)
+	check("new tank: more air", maxOxygen.Value == 120 and oxygen.Value == 120, maxOxygen.Value)
+	check("cannot buy twice", ask("Buy", "Tank15").ok == false)
+	check("can switch back to an owned tank", ask("Equip", "TankStarter").ok == true and maxOxygen.Value == 60)
+	check("cannot equip what is not owned", ask("Equip", "Rebreather").ok == false)
+	check("fins bought", ask("Buy", "FinsShort").ok == true and player:GetAttribute("SwimSpeedMultiplier") == 1.12)
+	local finParts = 0
+	for _, p in ipairs(character.DiveGear:GetChildren()) do if p.Name == "GearFin" then finParts += 1 end end
+	check("fins on both feet", finParts == 2, finParts)
+	check("lamp bought", ask("Buy", "LampTorch").ok == true)
+	local lens = character.DiveGear:FindFirstChild("GearLampLens")
+	check("head lamp casts a beam", lens ~= nil and lens:FindFirstChildOfClass("SpotLight") ~= nil and lens:FindFirstChildOfClass("SpotLight").Range == 40)
+	coins.Value = 5000
+	check("suit bought", ask("Buy", "Shorty").ok == true and math.abs(drain.Value - 0.9) < 1e-6, drain.Value)
+	check("suit worn: body recoloured, shirt set aside", character.UpperTorso.Color.B > 0.6 and shirt.Parent ~= character)
+	check("back in swimwear: skin and shirt restored", ask("Equip", "SuitNone").ok == true and shirt.Parent == character and math.abs(character.UpperTorso.Color.R - 200 / 255) < 0.01)
+	check("unknown item refused", ask("Buy", "Submarine").ok == false)
+	check("owned list mirrored for the UI", string.find(player:GetAttribute("OwnedEquipment"), "Tank15") ~= nil)
+	local PlayerData = require(ServerScriptService.Player.PlayerData)
+	local data = PlayerData.Get(player)
+	check("progress kept in PlayerData", data.Coins == coins.Value and data.Owned.Shorty == true and data.Equipped.Suit == "SuitNone")
+end
+
 print(string.format("\n%d checks, %d failures", checks, failures))
 if failures > 0 then
 	error(string.format("%d world checks failed", failures), 0)

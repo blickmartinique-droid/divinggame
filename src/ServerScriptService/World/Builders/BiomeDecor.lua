@@ -409,12 +409,12 @@ function BiomeDecor.Build(layout)
 	-- Keep the cave mouths clear: decor is planted on the heightfield, which
 	-- knows nothing of the holes, so anything that landed in (or over) a
 	-- porch or its cleft would float there and hide the way in.
-	-- Same for the wrecks' volumes (the Sirène, the graveyard, the liner):
-	-- no coral growing through a hull from the seabed under it.
+	-- Same for the wrecks' volumes (the Sirène, the graveyard, the liner)
+	-- and the hub's buildings: no coral growing through a hull or a jetty.
 	local caves = layout:GetAnchor("Caves")
 	local wreckBoxes = {}
 	for _, volume in ipairs(layout.reserved) do
-		if volume.kind == "box" and (volume.name == "Shipwreck" or volume.name:match("^Graveyard_") or volume.name:match("^Liner_")) then
+		if volume.kind == "box" and (volume.name == "Shipwreck" or volume.name:match("^Graveyard_") or volume.name:match("^Liner_") or volume.name:match("^Hub_")) then
 			table.insert(wreckBoxes, volume)
 		end
 	end

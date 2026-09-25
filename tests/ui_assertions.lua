@@ -41,6 +41,10 @@ Instance.new = function(class, parent)
 	local o = realNew(class, parent)
 	o.AbsolutePosition = Vector2.new(0, 0)
 	o.AbsoluteSize = Vector2.new(100, 400)
+	if class == "TextButton" or class == "ImageButton" then
+		local clicked = realNew("BindableEvent")
+		o.Activated = clicked.Event
+	end
 	return o
 end
 
@@ -211,6 +215,105 @@ ok, err = pcall(function()
 end)
 check("low-oxygen warning survives", ok, err)
 check("surface hint is shown", findText(hud, "REMONTE") and findText(hud, "REMONTE").Visible ~= false)
+
+section("Shop")
+local shopRequests = {}
+local shopOwned = { "TankStarter", "SuitNone", "FinsNone", "LampNone" }
+ok, err = pcall(function()
+	local ProximityPromptService = game:GetService("ProximityPromptService")
+	ProximityPromptService.PromptTriggered = Instance.new("BindableEvent").Event
+	local remote = Instance.new("RemoteFunction")
+	remote.Name = "EquipmentRequest"
+	remote.InvokeServer = function(_, action, id)
+		table.insert(shopRequests, action .. ":" .. id)
+		if action == "Buy" then
+			table.insert(shopOwned, id)
+			player:SetAttribute("OwnedEquipment", table.concat(shopOwned, ","))
+			player:SetAttribute("Equipped_Tank", id)
+			set(coins, coins.Value - 150)
+			return { ok = true, message = "Bouteille alu 12 L achetée et équipée" }
+		end
+		return { ok = false, message = "?" }
+	end
+	remote.Parent = ReplicatedStorage
+	player:SetAttribute("Equipped_Tank", "TankStarter")
+	RUN_SCRIPT("StarterPlayer", "StarterPlayerScripts", "DiveShop")
+end)
+check("DiveShop starts", ok, err)
+local shop = playerGui:FindFirstChild("DiveShop")
+check("shop closed until the counter is used", shop and shop.Enabled == false)
+ok, err = pcall(function()
+	local counterPart = Instance.new("Part")
+	counterPart.Position = root.Position
+	local prompt = Instance.new("ProximityPrompt")
+	prompt:SetAttribute("OpensShop", true)
+	prompt.Parent = counterPart
+	game:GetService("ProximityPromptService").PromptTriggered:Fire(prompt)
+	for _ = 1, 5 do frame() end
+end)
+check("counter prompt opens the shop", ok and shop.Enabled == true, err)
+local items = shop and shop.Panel:FindFirstChild("Items")
+local cards = 0
+for _, c in ipairs(items and items:GetChildren() or {}) do
+	if c:IsA("Frame") then cards += 1 end
+end
+check("tank tab lists the five tanks", cards == 5, cards)
+check("equipped tank shows ÉQUIPÉ", items.TankStarter.Action.Text == "ÉQUIPÉ ✓", items.TankStarter.Action.Text)
+check("tank for sale shows its price", items.Tank15.Action.Text == "600 ◉", items.Tank15.Action.Text)
+check("coins shown in the shop", findText(shop, "◉ 12 480") ~= nil)
+ok, err = pcall(function()
+	items.Tank12.Action.Activated:Fire()
+end)
+check("buying goes to the server", ok and shopRequests[1] == "Buy:Tank12", err or shopRequests[1])
+check("server's answer shown", findText(shop, "achetée et équipée") ~= nil)
+ok, err = pcall(function()
+	shop.Panel.Tabs.Suit.Activated:Fire()
+end)
+local suitCards = 0
+for _, c in ipairs(shop.Panel.Items:GetChildren()) do
+	if c:IsA("Frame") then suitCards += 1 end
+end
+check("suits tab lists the five suits", ok and suitCards == 5, err or suitCards)
+check("suit card shows its saving", findText(shop, "Consommation  −20") ~= nil)
+ok, err = pcall(function()
+	shop.Panel.Close.Activated:Fire()
+end)
+check("✕ closes the shop", ok and shop.Enabled == false, err)
+
+section("Island critters")
+local CollectionService = game:GetService("CollectionService")
+local function critter(tag, attributes, at)
+	local model = Instance.new("Model")
+	local body = Instance.new("Part")
+	body.Name = "Body"
+	body.CFrame = CFrame.new(at)
+	body.Parent = model
+	for _, side in ipairs({ "WingLeft", "WingRight" }) do
+		local wing = Instance.new("Part")
+		wing.Name = side
+		wing.CFrame = CFrame.new(at + Vector3.new(side == "WingLeft" and -1 or 1, 0, 0))
+		wing.Parent = model
+	end
+	model.PrimaryPart = body
+	for key, value in pairs(attributes) do model:SetAttribute(key, value) end
+	model.Parent = Workspace
+	CollectionService:AddTag(model, tag)
+	return model, body
+end
+local crabModel, crabBody = critter("Crab", { Home = Vector3.new(60, 4.3, 0), Range = 5, Speed = 4 }, Vector3.new(60, 4.3, 0))
+local gullModel, gullBody = critter("Seagull", { Center = Vector3.zero, Radius = 50, Height = 35, Speed = 0.3, Phase = 0 }, Vector3.new(0, 40, 0))
+local dolphinModel, dolphinBody = critter("Dolphin", { Center = Vector3.zero, Radius = 150, Speed = 0.1, Phase = 0 }, Vector3.new(150, -3, 0))
+ok, err = pcall(function()
+	camera.CFrame = CFrame.new(Vector3.new(0, 10, 0))
+	root.Position = Vector3.new(0, 5, 0)
+	RUN_SCRIPT("StarterPlayer", "StarterPlayerScripts", "IslandCritters")
+	for _ = 1, 120 do frame() end
+end)
+check("IslandCritters runs", ok, err)
+check("crab walks around its home", (crabBody.Position - Vector3.new(60, 4.3, 0)).Magnitude > 0.2 and (crabBody.Position - Vector3.new(60, 4.3, 0)).Magnitude < 7, crabBody.Position)
+check("seagull circles high above", gullBody.Position.Y > 30 and math.abs(Vector3.new(gullBody.Position.X, 0, gullBody.Position.Z).Magnitude - 50) < 1, gullBody.Position)
+check("seagull wings follow the body", (gullModel.WingLeft.Position - gullBody.Position).Magnitude < 1.6)
+check("dolphin swims round the lagoon", math.abs(Vector3.new(dolphinBody.Position.X, 0, dolphinBody.Position.Z).Magnitude - 150) < 1, dolphinBody.Position)
 
 section("Death")
 ok, err = pcall(function()

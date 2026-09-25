@@ -23,7 +23,8 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
 - **Construction du monde (ordre garanti)** — `World/WorldBootstrap.server.lua`
   est le seul script qui construit le monde : il exécute les modules de
   `World/Builders/` dans un ordre fixe (`Ocean` → `Seabed` → `Caves` →
-  `Shipwreck` → `WreckGraveyard` → `Currents` → `BiomeDecor` → `Biomes`) puis lève
+  `Shipwreck` → `WreckGraveyard` → `Liner` → `Hub` → `IslandLife` → `Currents` →
+  `BiomeDecor` → `Biomes`) puis lève
   `Workspace.WorldReady`, que les spawners attendent. Avant, ces étapes
   étaient des scripts indépendants sans ordre garanti par Roblox (le
   remplissage d'eau pouvait noyer les grottes, les spawners rater les zones
@@ -50,7 +51,7 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   de chaque joueur (autoritatif serveur).
 - **Oxygène** — `OxygenManager.server.lua` : consomme/régénère l'oxygène selon la
   profondeur (autoritatif serveur), avec `MaxOxygen`/`OxygenDrainPerSecond` par
-  joueur (prêt pour un futur équipement type Bouteille), remis au maximum à
+  joueur (fixés par l'équipement porté), remis au maximum à
   chaque réapparition. Tue le joueur (`Humanoid.Health = 0`) à 0.
 - **Butin** — `PlayerInventory.lua` + `InventoryManager.server.lua` : un
   trésor ramassé va dans le **sac** (`CarriedValue`/`CarriedCount`), vendu
@@ -62,7 +63,45 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   Chaque `SpawnRegion` Treasure (salles de l'épave, cavernes) fournit ses
   emplacements ; chaque zone de profondeur est complétée en pleine eau
   jusqu'à 15 trésors minimum, hors des volumes réservés. Rareté croissante
-  avec la profondeur.
+  avec la profondeur. **15 trésors modélisés** (`TreasureModels.lua`, trois
+  par rareté) : pièces d'or, bouteille à la mer, conque / bague sertie,
+  perle géante dans sa coquille, boussole / coffret, calice, longue-vue /
+  idole d'or, couronne, sablier / trident des abysses, crâne de cristal,
+  Cœur de l'Océan — chacun un petit modèle détaillé avec lumière et
+  étincelles à la couleur de sa rareté, qui flotte, tourne et tangue
+  (`TreasureAnimator.client.lua`).
+- **Hub de l'île** — `Builders/Hub.lua` : un village de plongée autour du
+  spawn. **Centre de plongée** au toit de chaume (comptoir-boutique, Marius
+  le moniteur, bouteilles, combinaisons, palmes et lampes exposées),
+  **ponton** au-dessus du lagon jusqu'à une plateforme de mise à l'eau
+  (pavillon « plongeur en immersion », échelle) avec le **bateau du club**
+  amarré, deux **bungalows sur pilotis**, un **phare** rouge et blanc dont
+  la lampe tourne, une place avec feu de camp et bancs, torches tiki, un
+  **panneau indicateur** vers chaque site (avec la distance) et le tableau
+  **« Meilleurs plongeurs »** (`HubLeaderboard.server.lua`).
+- **Équipement et boutique** — `EquipmentConfig.lua` : 4 catégories,
+  18 articles. **Bouteilles** (autonomie 60 → 260 s, jusqu'au recycleur),
+  **tenues** (consommation d'air −10 % → −48 %, du shorty au scaphandre
+  abyssal), **palmes** (vitesse +12 % → +40 %), **lampes** (une vraie
+  lumière frontale, portée 40 → 110). `EquipmentService.server.lua` valide
+  chaque achat côté serveur (`ReplicatedStorage.EquipmentRequest`) et
+  applique les effets ; `EquipmentVisuals.lua` **habille le personnage**
+  (bouteille ou bi-bouteille sur le dos, harnais, détendeur, masque — ou
+  casque en laiton avec le scaphandre —, palmes, lampe frontale,
+  combinaison aux couleurs de la tenue). `DiveShop.client.lua` : la
+  boutique moderne qui s'ouvre au comptoir (onglets, cartes, barre de
+  stats, acheter / équiper / équipé). **Sauvegarde** (`PlayerData.lua`,
+  DataStore) : pièces, équipement acheté et porté, gardés d'une session à
+  l'autre (sans accès aux API dans Studio, un avertissement et le jeu
+  continue sans sauvegarde).
+- **Vie sur l'île** — `Builders/IslandLife.lua` : palmiers courbés à noix de
+  coco, bananiers, fougères, hibiscus, oiseaux de paradis, herbes hautes,
+  rochers moussus ; coquillages, étoiles de mer, bois flotté et noix de
+  coco sur la plage, parasol et transats. Faune animée par
+  `IslandCritters.client.lua` : crabes et bernard-l'ermite qui trottinent
+  de côté (et fuient le joueur), mouettes qui tournent au-dessus de l'île,
+  papillons autour des fleurs, perroquets perchés dans les palmiers,
+  dauphins qui sautent dans le lagon.
 - **Interface** — un seul langage visuel (`UITheme.lua` : panneaux « verre »
   sombres translucides, coins arrondis, liseré fin, une couleur par sens —
   cyan oxygène, or butin, rouge danger — et mise à l'échelle automatique
@@ -149,6 +188,18 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   profondeurs : gorgones-fouets, corail noir, éponges de verre, anémones
   et plumes de mer lumineuses, gorgones sur les coques. Butin dans le brick,
   la chaloupe et les coffres ; requins, méduses et raies manta.
+- **Paquebot « L'Impératrice »** — `Builders/Liner.lua` : un paquebot de
+  900 studs brisé en deux dans la plaine abyssale (~500 m), au-delà de la
+  Sirène Noire. Proue debout, nez dans la vase : coque en tôles rivetées,
+  hublots (certains encore allumés), brèche à tribord vers les cales, nom en
+  lettres de laiton, passerelle, deux étages de superstructure, **grand
+  escalier sous une verrière**, salle de bal (lustres, piano), salle à
+  manger, cheminées (debout, penchée, effondrée), mât de misaine tombé,
+  bossoirs, stalactites de rouille, colonies bioluminescentes. Poupe 330
+  studs plus loin, tordue, flanc arraché, machines à nu, trois hélices en
+  bronze. Entre les deux : chaudières, quatrième cheminée, charbon, tôles,
+  valises, vaisselle, transats, baignoire, lustres, coffres-forts du
+  commissaire de bord. Biome dédié qui voit plus loin dans le noir.
 - **Biomes nommés** — `Builders/Biomes.lua` publie des volumes nommés dans
   `ReplicatedStorage.Biomes` (Lagon, Tombant du récif, Forêt de kelp, Kelp
   doré, Grand Bleu, Cimetière de la Sirène, Faille abyssale, Plaine
@@ -258,11 +309,8 @@ créature nage simplement sans animation de corps.
 
 ### Pas encore construit
 
-Boutique / équipements (Bouteille, Combinaison, Palmes,
-Lampe, Sac), morphologies (Petit / Moyen / Grand), harpon, évitement d'obstacles
-des créatures (elles traversent le terrain), décoration détaillée des zones
-(Récif/Grottes/Épave/Abysses — volontairement laissée simple pour l'instant),
-sauvegarde (DataStoreService).
+Sac (capacité), morphologies (Petit / Moyen / Grand), harpon, évitement
+d'obstacles des créatures (elles traversent le terrain).
 
 L'architecture 500 m est conçue pour être étendue plus tard (1000/2000/3000/4000 m)
 sans réécriture, mais ces paliers ne sont **pas** développés en V1.
@@ -280,8 +328,8 @@ retire pas, seul un remplissage `Air` creuse) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 109 vérifications
-luau tests/ui_test.lua         # 36 vérifications
+luau tests/world_test.lua      # 159 vérifications
+luau tests/ui_test.lua         # 54 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
@@ -295,13 +343,18 @@ luau tests/ui_test.lua         # 36 vérifications
   vers le haut, décors posés sur la roche ; coque
   bordée, quille posée dans le sable, entrées de l'épave en eau libre ;
   épaves du cimetière posées sur la corniche, sans chevaucher la Sirène,
-  brick à l'envers ouvert sur l'eau ; biomes nommés aux bons endroits ;
+  brick à l'envers ouvert sur l'eau ; paquebot (taille, quille dans la
+  vase, ouvertures, rien ne le traverse) ; biomes nommés aux bons endroits ;
+  hub (pilotis jusqu'au sol, bateau à flot, rien dans les bâtiments), vie
+  sur l'île sur la terre ferme, achats/équipement (prix, effets,
+  vêtements, sauvegarde) ;
   chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné ;
   15 trésors minimum par zone, aucun trésor ni créature dans la roche, les
   5 espèces présentes.
 - `ui_test` : lance le HUD, l'annonceur de zone et l'écran de mort avec un
   faux joueur local et les fait vivre une plongée (profondeur, entrée dans
-  un biome, oxygène bas, trésor, vente, mort, réapparition) en vérifiant ce
+  un biome, oxygène bas, trésor, vente, boutique, animaux de l'île, mort,
+  réapparition) en vérifiant ce
   qu'ils affichent, accents compris (`UITheme.Upper`).
 
 Analyse statique en complément, avec les types Roblox :

@@ -77,6 +77,15 @@ CF.__index = function(t, k)
 			return cf(-mulVec(rt, s.p), rt)
 		end
 	end
+	if k == "ToObjectSpace" then
+		return function(s, other)
+			local r = s.r
+			local rt = { r[1], r[4], r[7], r[2], r[5], r[8], r[3], r[6], r[9] }
+			local inverse = cf(-mulVec(rt, s.p), rt)
+			return inverse * other
+		end
+	end
+	if k == "ToWorldSpace" then return function(s, other) return s * other end end
 	if k == "LookVector" then return -col(t.r, 3) end
 	if k == "RightVector" or k == "XVector" then return col(t.r, 1) end
 	if k == "YVector" then return col(t.r, 2) end
@@ -536,6 +545,7 @@ PlayersService.GetPlayerFromCharacter = function(_, character)
 	return nil
 end
 PlayersService.PlayerAdded = newSignal()
+PlayersService.PlayerRemoving = newSignal()
 
 local tags = {}
 local tagSignals = {}
@@ -559,7 +569,9 @@ CollectionStub.GetInstanceAddedSignal = function(_, tag)
 end
 CLEAR_TAGS = function() tags = {}; tagSignals = {} end
 
+BIND_TO_CLOSE = {}
 game = {
+	BindToClose = function(_, fn) table.insert(BIND_TO_CLOSE, fn) end,
 	GetService = function(_, name)
 		if not services[name] then service(name, name) end
 		return services[name]
