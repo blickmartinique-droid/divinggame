@@ -192,8 +192,8 @@ end
 
 -- Visual children replicate shortly after the current itself, so a build
 -- that finds nothing yet is retried a few times instead of giving up.
-local function register(instance: Instance, attempt: number?)
-	attempt = attempt or 1
+local function register(instance: Instance, attemptNumber: number?)
+	local attempt: number = attemptNumber or 1
 	if not instance:GetAttribute("CurrentShape") then
 		return
 	end

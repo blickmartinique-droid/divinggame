@@ -13,12 +13,15 @@
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
+local MarineFlora = require(script.Parent.MarineFlora)
+
 local IslandLife = {}
 
 local LAND = 3 -- the dry island is above this height
 
 function IslandLife.Build(layout)
 	local rng = layout:Random("IslandLife")
+	local kit = MarineFlora.new(layout:Random("IslandFronds"))
 	local function random(): number
 		return rng:NextNumber()
 	end
@@ -120,18 +123,14 @@ function IslandLife.Build(layout)
 			for c = 1, 4 do
 				part(flora, "Coconut", Vector3.new(0.9, 0.9, 0.9), crown * CFrame.new(math.cos(c * 1.6) * 0.6, -0.5, math.sin(c * 1.6) * 0.6), Enum.Material.Wood, Color3.fromRGB(96, 70, 40), Enum.PartType.Ball)
 			end
+			-- Fronds: leaflets along an arching midrib (MarineFlora), a
+			-- ring of eight and a young spear standing in the middle.
 			local fronds = 8
 			for f = 1, fronds do
-				local length = 6 + random() * 2.5
-				local yaw = f / fronds * math.pi * 2 + random() * 0.3
-				local stem = crown * CFrame.Angles(0, yaw, 0) * CFrame.Angles(math.rad(-20 - random() * 20), 0, 0)
-				-- The frond droops: an inner and an outer blade.
-				local inner = part(flora, "PalmFrond", Vector3.new(1.6, 0.12, length * 0.55), stem * CFrame.new(0, 0, -length * 0.27), Enum.Material.Grass, FROND[rng:NextInteger(1, #FROND)])
-				local tip = stem * CFrame.new(0, 0, -length * 0.55) * CFrame.Angles(math.rad(-35), 0, 0)
-				local outer = part(flora, "PalmFrond", Vector3.new(1.2, 0.1, length * 0.5), tip * CFrame.new(0, 0, -length * 0.24), Enum.Material.Grass, FROND[rng:NextInteger(1, #FROND)])
-				sway(inner, 0.05, 0.3)
-				sway(outer, 0.08, 0.3)
+				kit:PalmFrond(flora, crown, f / fronds * math.pi * 2 + random() * 0.3, 7 + random() * 3, FROND[rng:NextInteger(1, #FROND)])
 			end
+			part(flora, "PalmSpear", Vector3.new(0.3, 2.6, 0.3), crown * CFrame.new(0, 1.2, 0), Enum.Material.Grass, Color3.fromRGB(120, 170, 80))
+			part(flora, "PalmHeart", Vector3.new(1.5, 1, 1.5), crown * CFrame.new(0, 0.1, 0), Enum.Material.Wood, Color3.fromRGB(110, 90, 60), Enum.PartType.Ball)
 			table.insert(palmTops, crown)
 		end
 	end
@@ -338,7 +337,13 @@ function IslandLife.Build(layout)
 		finish(model, body)
 	end
 
-	print(string.format("[IslandLife] %d parts", #root:GetDescendants()))
+	local parts = 0
+	for _, descendant in ipairs(root:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			parts += 1
+		end
+	end
+	print(string.format("[IslandLife] %d parts", parts))
 end
 
 return IslandLife

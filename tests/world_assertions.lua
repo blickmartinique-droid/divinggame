@@ -110,18 +110,27 @@ if caves then
 	end
 	check("Cathédrale: several pillars stand in the hall", pillarHits >= 12, pillarHits)
 	local floating, buried = 0, 0
-	for _, part in ipairs(Workspace.World.Underwater.Caves.Decor:GetChildren()) do
-		if part.Name == "Stalactite" then
-			if TERRAIN_SOLID_AT(part.Position) then buried += 1 end
-		elseif part.Name == "Crystal" or part.Name == "FungusStalk" then
-			local foot = part.CFrame * Vector3.new(0, -part.Size.Y / 2 - 1.5, 0)
+	local crystals, dripstones = 0, 0
+	for _, item in ipairs(Workspace.World.Underwater.Caves.Decor:GetChildren()) do
+		if item.Name == "Stalactite" then
+			dripstones += 1
+			local tip = item:FindFirstChild("StalactiteTip")
+			if tip and TERRAIN_SOLID_AT(tip.Position) then
+				buried += 1
+				if buried <= 3 then print("  buried tip", tip.Position, TERRAIN_MATERIAL_AT(tip.Position), item.WorldPivot.Position) end
+			end
+		elseif item.Name == "Crystal" or item.Name == "GlowFungi" then
+			if item.Name == "Crystal" then crystals += 1 end
+			local foot = item.WorldPivot.Position - Vector3.new(0, 1.5, 0)
 			if not TERRAIN_SOLID_AT(foot) then
 				floating += 1
-				if floating <= 3 then print("  floating", part.Name, foot, TERRAIN_MATERIAL_AT(foot)) end
+				if floating <= 3 then print("  floating", item.Name, foot, TERRAIN_MATERIAL_AT(foot)) end
 			end
 		end
 	end
 	check("cave floor props rest on rock/sand", floating <= 3, floating)
+	check("cave crystals and dripstones grown", crystals >= 40 and dripstones >= 30, crystals .. " crystals, " .. dripstones .. " stalactites")
+	check("stalactite tips hang in open water", buried <= 2, buried)
 end
 
 section("Volcano network")
@@ -258,10 +267,11 @@ if graveyard then
 	check("graveyard wrecks clear of the Sirène Noire", overlaps == 0, overlaps)
 	local floating = 0
 	for _, p in ipairs(root.Life:GetChildren()) do
-		if p.Name == "SeaWhip" or p.Name == "GlassSponge" or p.Name == "BlackCoral" then
-			local h = layout:GroundHeight(p.Position.X, p.Position.Z)
-			local foot = p.Name == "GlassSponge" and p.Position.Y - p.Size.X / 2 or p.Position.Y - p.Size.Y / 2
-			if foot - h > 2.5 then floating += 1; print("  floating", p.Name, p.Position, h) end
+		if p.Name == "SeaWhip" or p.Name == "GlassSponge" or p.Name == "BlackCoral" or p.Name == "Anemone" or p.Name == "SeaPen" then
+			local at = p.ClassName == "Model" and p.WorldPivot.Position or p.Position
+			local h = layout:GroundHeight(at.X, at.Z)
+			local foot = p.ClassName == "Model" and at.Y or at.Y - p.Size.Y / 2
+			if foot - h > 2.5 then floating += 1; print("  floating", p.Name, at, h) end
 		end
 	end
 	check("graveyard life planted on the ledge", floating == 0, floating)
@@ -455,13 +465,78 @@ check("every path segment carries flow ribbons", ribbons == segments * 3, ribbon
 check("entry beacons mark the main currents", #Workspace.Currents.Beacons:GetChildren() >= 7, #Workspace.Currents.Beacons:GetChildren())
 
 section("Decor")
-local decorFloating = 0
-for _, part in ipairs(Workspace.WorldDecor.KelpForest:GetChildren()) do
-	if part.Name == "GiantKelp" and not TERRAIN_SOLID_AT(part.Position - Vector3.new(0, part.Size.Y / 2 + 1, 0)) then decorFloating += 1 end
+local decorFloating, kelps = 0, 0
+for _, kelp in ipairs(Workspace.WorldDecor.KelpForest:GetChildren()) do
+	if kelp.Name == "GiantKelp" then
+		kelps += 1
+		if not TERRAIN_SOLID_AT(kelp.WorldPivot.Position - Vector3.new(0, 1, 0)) then decorFloating += 1 end
+	end
 end
 check("giant kelp rooted in the seabed", decorFloating <= 2, decorFloating)
-check("kelp forest planted", #Workspace.WorldDecor.KelpForest:GetChildren() > 200, #Workspace.WorldDecor.KelpForest:GetChildren())
-check("rift vents built", Workspace.WorldDecor.Abyss:FindFirstChild("VentThroat") ~= nil)
+check("kelp forest planted", kelps >= 150, kelps)
+-- The lagoon reef: limestone rocks, part of the seabed from then on.
+local CollectionService = game:GetService("CollectionService")
+local rocks = layout:GetAnchor("ReefRocks") or {}
+check("reef rocks rise from the lagoon", #rocks >= 40, #rocks)
+local notGround, notSolid, inMouth = 0, 0, 0
+for _, rock in ipairs(rocks) do
+	if layout:GroundHeight(rock.center.X, rock.center.Z) < rock.center.Y + rock.radius - 0.05 then notGround += 1 end
+	if not TERRAIN_SOLID_AT(rock.center + Vector3.new(0, rock.radius * 0.5, 0)) then notSolid += 1 end
+	for _, anchor in ipairs({ caves, layout:GetAnchor("Network") }) do
+		for _, entrance in ipairs(anchor.entrances) do
+			if (rock.center - entrance.mouth).Magnitude < entrance.clearRadius + rock.radius then inMouth += 1 end
+		end
+	end
+	for _, volume in ipairs(layout.reserved) do
+		if volume.kind == "box" and volume.name:match("^Hub_") then
+			local l = volume.cframe:PointToObjectSpace(rock.center)
+			if math.abs(l.X) < volume.half.X + rock.radius and math.abs(l.Y) < volume.half.Y + rock.radius and math.abs(l.Z) < volume.half.Z + rock.radius then inMouth += 1 end
+		end
+	end
+end
+check("reef rocks are seabed for the layout", notGround == 0, notGround)
+check("reef rocks are real terrain", notSolid == 0, notSolid)
+check("reef rocks keep clear of mouths and the hub", inMouth == 0, inMouth)
+local floatingCoral, buriedCoral, corals = 0, 0, 0
+for _, item in ipairs(Workspace.WorldDecor.LagoonReef:GetChildren()) do
+	if item.ClassName == "Model" then
+		corals += 1
+		local p = item.WorldPivot.Position
+		local g = layout:GroundHeight(p.X, p.Z)
+		if p.Y - g > 1 then floatingCoral += 1 end
+		if g - p.Y > 2.5 then buriedCoral += 1 end
+	end
+end
+check("lagoon reef grown", corals >= 250, corals)
+check("no lagoon coral floating over the seabed", floatingCoral == 0, floatingCoral)
+check("no lagoon coral swallowed by a rock", buriedCoral <= 3, buriedCoral)
+local fish, homeless = 0, 0
+for _, model in ipairs(CollectionService:GetTagged("ReefFish")) do
+	fish += 1
+	local anemone = model.Parent
+	if not anemone or anemone.Name ~= "Anemone" or (model:GetAttribute("Home") - anemone.WorldPivot.Position).Magnitude > 4 then homeless += 1 end
+end
+check("clownfish pairs live in the lagoon", fish >= 16, fish)
+check("each clownfish over its own anemone", homeless == 0, homeless)
+local chains, badChains = 0, 0
+for _, model in ipairs(CollectionService:GetTagged("Sway")) do
+	if model.ClassName == "Model" then
+		local joints = model:GetAttribute("SwayJoints") or 0
+		if model.Name == "GiantKelp" and joints >= 4 then chains += 1 end
+		for index = 1, joints do
+			if typeof(model:GetAttribute("Joint" .. index)) ~= "CFrame" then badChains += 1 end
+		end
+		if joints < 1 then badChains += 1 end
+	end
+end
+check("giant kelp bends as a jointed chain", chains >= 150, chains)
+check("every swaying model has its joints", badChains == 0, badChains)
+local throats, chimneys = 0, 0
+for _, d in ipairs(Workspace.WorldDecor.Abyss:GetDescendants()) do
+	if d.Name == "VentThroat" then throats += 1 end
+	if d.Name == "Chimney" then chimneys += 1 end
+end
+check("rift vents built", throats == 5 and chimneys >= 30, throats .. " throats, " .. chimneys .. " chimney blocks")
 
 section("Spawners")
 RUN_SCRIPT("ServerScriptService", "World", "TreasureSpawner")
@@ -564,7 +639,6 @@ for _, p in ipairs(life.Flora:GetChildren()) do
 end
 check("island plants grow on dry land", wet == 0, wet)
 check("no plant growing through the hub", inBuildings == 0, inBuildings)
-local CollectionService = game:GetService("CollectionService")
 for _, tag in ipairs({ "Crab", "Seagull", "Butterfly", "Parrot", "Dolphin" }) do
 	local animals, rigged = 0, 0
 	for _, m in ipairs(CollectionService:GetTagged(tag)) do

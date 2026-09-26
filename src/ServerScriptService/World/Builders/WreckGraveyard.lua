@@ -20,6 +20,8 @@
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
+local MarineFlora = require(script.Parent.MarineFlora)
+
 local WreckGraveyard = {}
 
 local WOOD = Color3.fromRGB(92, 76, 58)
@@ -57,6 +59,7 @@ function WreckGraveyard.Build(layout)
 	local site = layout:GetAnchor("WreckSite")
 	assert(site and site.distance, "WreckGraveyard needs the Seabed's wreck ledge")
 	local rng = layout:Random("WreckGraveyard")
+	local kit = MarineFlora.new(layout:Random("GraveyardLife"))
 	local function random(): number
 		return rng:NextNumber()
 	end
@@ -390,26 +393,17 @@ function WreckGraveyard.Build(layout)
 					part(life, "BlackCoralBranch", Vector3.new(0.3, 3 + random() * 2, 0.3), trunk * CFrame.new(0, -1 + k * 0.8, 0) * CFrame.Angles(0, k * 1.3, 0.8) * CFrame.new(0, 1.5, 0), Enum.Material.SmoothPlastic, Color3.fromRGB(236, 232, 220))
 				end
 			elseif roll < 0.63 then
-				-- Glass sponge: a pale translucent vase.
-				local height = 3 + random() * 4
-				local sponge = part(life, "GlassSponge", Vector3.new(height, height * 0.5, height * 0.5), CFrame.new(position + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.Glass, Color3.fromRGB(230, 236, 240), Enum.PartType.Cylinder)
-				sponge.Transparency = 0.35
+				-- Glass sponge: a Venus' flower basket (MarineFlora).
+				kit:GlassSponge(life, position - Vector3.new(0, 0.3, 0), 4 + random() * 6)
 			elseif roll < 0.82 then
 				-- Glowing anemones.
-				for k = 1, rng:NextInteger(2, 5) do
-					local base = position + Vector3.new(random() * 3 - 1.5, 0, random() * 3 - 1.5)
-					part(life, "AnemoneFoot", Vector3.new(1.2, 1.4, 1.4), CFrame.new(base + Vector3.new(0, 0.5, 0)) * CFrame.Angles(0, 0, math.pi / 2), Enum.Material.SmoothPlastic, Color3.fromRGB(120, 60, 90), Enum.PartType.Cylinder)
-					for tentacle = 1, 6 do
-						local arm = part(life, "AnemoneTentacle", Vector3.new(0.25, 1.8, 0.25), CFrame.new(base + Vector3.new(0, 1.8, 0)) * CFrame.Angles(0, tentacle, 0.5) * CFrame.new(0, 0.5, 0), Enum.Material.Neon, k % 2 == 0 and GLOW or Color3.fromRGB(255, 120, 200))
-						arm.Transparency = 0.25
-					end
+				for k = 1, rng:NextInteger(1, 3) do
+					local base = ground(position.X + random() * 3 - 1.5, position.Z + random() * 3 - 1.5)
+					kit:Anemone(life, base, 0.8 + random() * 0.3, Color3.fromRGB(120, 60, 90), k % 2 == 0 and GLOW or Color3.fromRGB(255, 120, 200), true, 8)
 				end
 			else
 				-- A sea pen: a glowing quill on a stalk.
-				local height = 2.5 + random() * 2
-				local pen = part(life, "SeaPen", Vector3.new(0.9, height, 0.3), CFrame.new(position + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, random() * 3, 0), Enum.Material.Neon, Color3.fromRGB(140, 255, 210))
-				pen.Transparency = 0.3
-				sway(pen, 0.08, 0.3)
+				kit:SeaPen(life, position, 3.5 + random() * 3, Color3.fromRGB(140, 255, 210))
 			end
 		end
 	end
@@ -439,7 +433,13 @@ function WreckGraveyard.Build(layout)
 		reserved = reserved,
 		radius = site.halfArc + 40,
 	})
-	print(string.format("[WreckGraveyard] %d wreck planks, %d parts", planks, #root:GetDescendants()))
+	local parts = 0
+	for _, descendant in ipairs(root:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			parts += 1
+		end
+	end
+	print(string.format("[WreckGraveyard] %d wreck planks, %d parts", planks, parts))
 end
 
 return WreckGraveyard

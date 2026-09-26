@@ -24,6 +24,7 @@ local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
 local Noise = require(script.Parent.Noise)
+local MarineFlora = require(script.Parent.MarineFlora)
 
 local LavaTubes = {}
 
@@ -79,6 +80,7 @@ function LavaTubes.Build(layout)
 	local terrain = Workspace.Terrain
 	local rng = layout:Random("LavaTubes")
 	local noise = Noise.new(layout.seed + 404)
+	local kit = MarineFlora.new(layout:Random("LavaTubeDecor"))
 	local function random(): number
 		return rng:NextNumber()
 	end
@@ -455,11 +457,11 @@ function LavaTubes.Build(layout)
 			local a = random() * math.pi * 2
 			local r = random() * echos.radius * 0.7
 			local base = Vector3.new(echos.center.X + math.cos(a) * r, echos.floorY, echos.center.Z + math.sin(a) * r)
-			local height = 2 + random() * 4
-			local crystal = part(decor, "EchoCrystal", Vector3.new(0.9, height, 0.9), CFrame.new(base + Vector3.new(0, height / 2 - 0.3, 0)) * CFrame.Angles(random() * 0.5, random() * 3, random() * 0.5), Enum.Material.Neon, Color3.fromRGB(200, 170, 255), nil, false)
-			crystal.Transparency = 0.2
+			local height = 2 + random() * 5
+			local crystal = kit:Crystal(decor, base - Vector3.new(0, 0.4, 0), kit:bend(Vector3.new(0, 1, 0), random() * 0.45), height, 0.9 + random() * 0.6, Color3.fromRGB(200, 170, 255), 0.2)
+			crystal.Name = "EchoCrystal"
 			if k % 6 == 0 then
-				light(crystal, Color3.fromRGB(200, 170, 255), 20, 0.9)
+				light(crystal:FindFirstChild("CrystalBody") :: BasePart, Color3.fromRGB(200, 170, 255), 20, 0.9)
 			end
 		end
 	end

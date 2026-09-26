@@ -154,6 +154,18 @@ function WorldLayout:IsFree(point: Vector3, margin: number?): (boolean, string?)
 	return true, nil
 end
 
+-- The first reserved volume (grown by margin) holding the point, skipping
+-- those `ignore` names -- for placing things inside a volume that is
+-- itself reserved (reef rocks in the lagoon, under the "Beach").
+function WorldLayout:VolumeAt(point: Vector3, margin: number?, ignore: ((string) -> boolean)?): string?
+	for _, volume in ipairs(self.reserved) do
+		if not (ignore and ignore(volume.name)) and inside(volume, point, margin or 0) then
+			return volume.name
+		end
+	end
+	return nil
+end
+
 -- Samples a segment (e.g. a spire's axis) every `step` studs.
 function WorldLayout:IsSegmentFree(a: Vector3, b: Vector3, margin: number?, step: number?): (boolean, string?)
 	local length = (b - a).Magnitude

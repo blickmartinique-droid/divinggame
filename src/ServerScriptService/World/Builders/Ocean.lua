@@ -166,60 +166,29 @@ local function beachProps(rng: Random)
 		return part
 	end
 
+	-- Boulders on the dry sand: a weathered main stone with a smaller one
+	-- or two leaning on it. (The palms and plants are IslandLife's.)
 	local coreRadius = Ocean.BEACH_CORE_RADIUS
 	local coreTop = Ocean.CORE_TOP_Y
+	local STONE = { Color3.fromRGB(96, 104, 112), Color3.fromRGB(112, 116, 120), Color3.fromRGB(84, 90, 98) }
+	local function stone(size: Vector3, cframe: CFrame)
+		local part = prop("BeachRock", size, cframe, Enum.Material.Slate, STONE[rng:NextInteger(1, #STONE)])
+		part.CanCollide = false -- a box collider would stick out of the round stone
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = part
+		return part
+	end
 	for i = 1, 9 do
 		local angle = (i / 9) * math.pi * 2 + 0.3
 		local radius = coreRadius - 30 + rng:NextNumber() * 26
 		local size = 2.5 + rng:NextNumber() * 4
-		prop(
-			"BeachRock",
-			Vector3.new(size, size * (0.5 + rng:NextNumber() * 0.4), size * (0.7 + rng:NextNumber() * 0.5)),
-			CFrame.new(math.cos(angle) * radius, coreTop - 0.6, math.sin(angle) * radius)
-				* CFrame.Angles((rng:NextNumber() - 0.5) * 0.5, rng:NextNumber() * math.pi * 2, (rng:NextNumber() - 0.5) * 0.5),
-			Enum.Material.Slate,
-			Color3.fromRGB(96, 104, 112)
-		)
-	end
-
-	-- Stylised palms: a leaning trunk topped with a fan of drooping fronds.
-	for i = 1, 7 do
-		local angle = (i / 7) * math.pi * 2 + 0.7
-		local radius = 18 + rng:NextNumber() * (coreRadius - 40)
-		local base = Vector3.new(math.cos(angle) * radius, coreTop, math.sin(angle) * radius)
-		local height = 9 + rng:NextNumber() * 5
-		local lean = CFrame.Angles(0, rng:NextNumber() * math.pi * 2, 0) * CFrame.Angles(math.rad(6 + rng:NextNumber() * 8), 0, 0)
-		local trunkFrame = CFrame.new(base) * lean * CFrame.new(0, height / 2, 0)
-		local trunk = prop("PalmTrunk", Vector3.new(1.1, height, 1.1), trunkFrame, Enum.Material.Wood, Color3.fromRGB(128, 96, 66))
-		trunk.CanCollide = false
-		local crown = trunkFrame * CFrame.new(0, height / 2, 0)
-		for f = 1, 7 do
-			local frondLength = 5 + rng:NextNumber() * 2
-			local frond = prop(
-				"PalmFrond",
-				Vector3.new(0.9, 0.15, frondLength),
-				crown * CFrame.Angles(0, (f / 7) * math.pi * 2 + rng:NextNumber() * 0.4, 0)
-					* CFrame.Angles(math.rad(-28 - rng:NextNumber() * 14), 0, 0) * CFrame.new(0, 0, -frondLength / 2),
-				Enum.Material.Grass,
-				Color3.fromRGB(70 + rng:NextInteger(0, 25), 150 + rng:NextInteger(0, 30), 60)
-			)
-			frond.CanCollide = false
+		local base = CFrame.new(math.cos(angle) * radius, coreTop - 0.4, math.sin(angle) * radius) * CFrame.Angles(0, rng:NextNumber() * math.pi * 2, 0)
+		stone(Vector3.new(size * 1.2, size * (0.6 + rng:NextNumber() * 0.3), size * (0.8 + rng:NextNumber() * 0.4)), base * CFrame.Angles((rng:NextNumber() - 0.5) * 0.3, 0, (rng:NextNumber() - 0.5) * 0.3))
+		for k = 1, rng:NextInteger(1, 2) do
+			local small = size * (0.35 + rng:NextNumber() * 0.25)
+			stone(Vector3.new(small * 1.2, small * 0.75, small), base * CFrame.Angles(0, k * 2.4, 0) * CFrame.new(size * 0.55, -small * 0.1, 0) * CFrame.Angles(0.2, rng:NextNumber() * 3, 0.3))
 		end
-	end
-
-	for _ = 1, 12 do
-		local angle = rng:NextNumber() * math.pi * 2
-		local radius = rng:NextNumber() * (coreRadius - 22)
-		local size = 1.4 + rng:NextNumber() * 1.6
-		local bush = prop(
-			"BeachBush",
-			Vector3.new(size, size * 0.75, size),
-			CFrame.new(math.cos(angle) * radius, coreTop + size * 0.3, math.sin(angle) * radius),
-			Enum.Material.Grass,
-			Color3.fromRGB(80, 140 + rng:NextInteger(0, 30), 65),
-			Enum.PartType.Ball
-		)
-		bush.CanCollide = false
 	end
 end
 

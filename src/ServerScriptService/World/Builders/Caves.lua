@@ -26,6 +26,7 @@ local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
 local Noise = require(script.Parent.Noise)
+local MarineFlora = require(script.Parent.MarineFlora)
 
 local Caves = {}
 
@@ -115,19 +116,6 @@ local function spawnRegion(parent: Instance, name: string, center: Vector3, size
 	end
 	CollectionService:AddTag(region, "SpawnRegion")
 	return region
-end
-
--- A tapering spike from three stacked, turned blocks (stalactite when
--- `direction` is -1, stalagmite when +1).
-local function spike(parent: Instance, base: Vector3, direction: number, length: number, width: number)
-	local y = base.Y
-	for segment = 1, 3 do
-		local segmentLength = length / 3
-		local segmentWidth = width * (1 - (segment - 1) * 0.3)
-		part(parent, direction < 0 and "Stalactite" or "Stalagmite", Vector3.new(segmentWidth, segmentLength, segmentWidth),
-			CFrame.new(base.X, y + direction * segmentLength / 2, base.Z) * CFrame.Angles(0, math.pi / 4 * segment, 0), Enum.Material.Rock, ROCK_COLOR)
-		y += direction * segmentLength * 0.9
-	end
 end
 
 -- Build ------------------------------------------------------------------------------------
@@ -278,6 +266,7 @@ function Caves.Build(layout)
 		return false
 	end
 	local pillars = 0
+	local pillarSpots = {} -- where nothing may hang from the roof
 	for k = 1, 16 do
 		if pillars >= 5 then
 			break
@@ -289,6 +278,7 @@ function Caves.Build(layout)
 			continue
 		end
 		pillars += 1
+		table.insert(pillarSpots, { at = base, radius = pillarRadius * 1.5 + 2 })
 		local bottom, top = cathedral.floorY - 4, cathedral.center.Y + cathedral.radius
 		terrain:FillCylinder(CFrame.new(base.X, (bottom + top) / 2, base.Z), top - bottom, pillarRadius, Enum.Material.Rock)
 		terrain:FillBall(Vector3.new(base.X, cathedral.floorY + 1, base.Z), pillarRadius * 1.5, Enum.Material.Rock)
@@ -343,35 +333,45 @@ function Caves.Build(layout)
 		return Vector3.new(chamber.center.X + math.cos(angle) * d, chamber.floorY - 0.5, chamber.center.Z + math.sin(angle) * d)
 	end
 
+	-- Crystals, dripstones and fungi come from the shared model kit (with
+	-- their own random stream, so the layout above stays as it was).
+	local kit = MarineFlora.new(layout:Random("CaveDecor"))
 	local function crystalCluster(base: Vector3, color: Color3, scale: number)
-		for shard = 1, rng:NextInteger(3, 6) do
-			local height = (3 + rng:NextNumber() * 7) * scale
-			local tilt = CFrame.Angles((rng:NextNumber() - 0.5) * 1.0, rng:NextNumber() * math.pi * 2, (rng:NextNumber() - 0.5) * 1.0)
-			local crystal = part(decor, "Crystal", Vector3.new(0.9, height, 0.9) * math.max(scale, 0.8),
-				CFrame.new(base) * tilt * CFrame.new(0, height / 2, 0) * CFrame.Angles(0, math.pi / 4, 0), Enum.Material.Neon, color)
-			crystal.Transparency = 0.12
+		for shard = 1, kit.rng:NextInteger(3, 6) do
+			local height = kit:range(3, 10) * scale
+			local dir = shard == 1 and Vector3.new(0, 1, 0) or kit:bend(Vector3.new(0, 1, 0), kit:range(0.15, 0.55))
+			local crystal = kit:Crystal(decor, base - dir * 0.4, dir, height, 1.1 * math.max(scale, 0.8) * kit:range(0.8, 1.3), color)
 			if shard == 1 then
-				light(crystal, color, 16, 1.2)
+				light(crystal:FindFirstChild("CrystalBody") :: BasePart, color, 16, 1.2)
 			end
 		end
 	end
 
-	local function fungusPatch(center: Vector3, spread: number?)
-		local width = (spread or 3) * 2
-		for _ = 1, rng:NextInteger(3, 6) do
-			local base = center + Vector3.new((rng:NextNumber() - 0.5) * width, 0, (rng:NextNumber() - 0.5) * width)
-			local stalk = 0.8 + rng:NextNumber() * 1.6
-			part(decor, "FungusStalk", Vector3.new(0.35, stalk, 0.35), CFrame.new(base + Vector3.new(0, stalk / 2, 0)), Enum.Material.SmoothPlastic, Color3.fromRGB(205, 215, 205))
-			local cap = 0.9 + rng:NextNumber() * 1.3
-			part(decor, "FungusCap", Vector3.new(cap, cap * 0.45, cap), CFrame.new(base + Vector3.new(0, stalk, 0)), Enum.Material.Neon, Color3.fromRGB(120, 255, 210)).Shape = Enum.PartType.Ball
+	-- Stalactite (direction -1) or stalagmite (+1).
+	local function spike(parent: Instance, base: Vector3, direction: number, length: number, width: number)
+		kit:Dripstone(parent, base, Vector3.new(0, direction, 0), length, width, ROCK_COLOR, direction < 0 and "Stalactite" or "Stalagmite")
+	end
+
+	local function flat(y: number): (number, number) -> Vector3
+		return function(x: number, z: number): Vector3
+			return Vector3.new(x, y, z)
 		end
+	end
+	local function fungusPatch(center: Vector3, spread: number?)
+		kit:GlowFungi(decor, flat(center.Y), center, spread or 3, Color3.fromRGB(120, 255, 210))
 	end
 
 	local function hangFromCeiling(chamber, count: number)
 		for _ = 1, count do
 			local p = floorPoint(chamber, 0.75)
 			local ceiling = ceilingAbove(chamber, p.X, p.Z)
-			if ceiling and ceiling - chamber.floorY > 12 then
+			local clear = true
+			for _, pillar in ipairs(pillarSpots) do
+				if Vector3.new(p.X - pillar.at.X, 0, p.Z - pillar.at.Z).Magnitude < pillar.radius then
+					clear = false
+				end
+			end
+			if clear and ceiling and ceiling - chamber.floorY > 12 then
 				spike(decor, Vector3.new(p.X, ceiling + 1.5, p.Z), -1, math.min(4 + rng:NextNumber() * 10, (ceiling - chamber.floorY) * 0.4), 1.4 + rng:NextNumber() * 1.8)
 			end
 		end

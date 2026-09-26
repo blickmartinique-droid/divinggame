@@ -95,7 +95,7 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   l'autre (sans accès aux API dans Studio, un avertissement et le jeu
   continue sans sauvegarde).
 - **Vie sur l'île** — `Builders/IslandLife.lua` : palmiers courbés à noix de
-  coco, bananiers, fougères, hibiscus, oiseaux de paradis, herbes hautes,
+  coco (palmes à folioles qui retombent et ondulent au vent), bananiers, fougères, hibiscus, oiseaux de paradis, herbes hautes,
   rochers moussus ; coquillages, étoiles de mer, bois flotté et noix de
   coco sur la plage, parasol et transats. Faune animée par
   `IslandCritters.client.lua` : crabes et bernard-l'ermite qui trottinent
@@ -265,14 +265,44 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   chaque ouverture (dehors comme dans le Cœur), **balises runiques** tout le
   long des tunnels pour ne jamais se perdre. Butin dans le temple et les
   salles, tortues, requins et méduses.
-- **Biomes** — `Builders/BiomeDecor.lua` : récif du lagon (coraux branchus,
-  cerveaux, tables, éventails, éponges, anémones, oursins, étoiles de mer,
-  bénitiers, herbiers, kelp), gorgones et éponges sur le tombant, **forêt de
-  kelp géant** sur le flanc ouest, **cheminées hydrothermales** fumantes
-  avec vers tubicoles et roche en fusion dans la faille, plumes de mer et
-  éponges de verre sur la plaine, **jardins de corail** sur les flancs,
-  champs d'anémones, **kelp doré** sur le flanc est, crinoïdes. Plantes
-  animées par `FloraAnimator.client.lua`. Faune : régions de créatures dans
+- **Modèles de la vie marine** — `Builders/MarineFlora.lua`, une
+  bibliothèque de modèles détaillés partagée par tous les builders (tiges
+  cylindriques tendues entre deux points, ellipsoïdes, triangles exacts) :
+  corail corne-de-cerf ramifié à pointes pâles, **corail cerveau** et son
+  labyrinthe de crêtes, corail table à bord festonné et ramilles, corail
+  champignon strié, corail mou en pompons, **gorgones** (réseau de branches
+  sur un voile translucide), éponges-tonneaux côtelées à cavité sombre,
+  éponges-tubes à lèvre et bouche noire, **anémones** à deux couronnes de
+  tentacules avec leur couple de **poissons-clowns**, **kelp géant
+  articulé** (crampon, stipe en segments, flotteurs, lames, couronne),
+  oursins à piquants, étoiles de mer à cinq bras, **bénitiers** à valves
+  festonnées sur manteau bleu, fumeurs noirs à corniches et croûtes
+  minérales, vers de Riftia, crinoïdes, plumes de mer, corbeilles de Vénus,
+  tuniciers lumineux ; et aussi cristaux hexagonaux à pointe, stalactites
+  annelées, champignons des grottes et palmes de cocotier.
+- **Biomes** — `Builders/BiomeDecor.lua` : récif du lagon — **rochers**
+  gris coiffés d'un gazon d'algues et couronnés de corail (ils cassent
+  aussi la marche entre les deux paliers du lagon et font partie du sol
+  pour le reste du jeu :
+  trésors et créatures ne s'y enfoncent pas), têtes de corail, bosquets de
+  corne-de-cerf, anémones et poissons-clowns, oursins, étoiles de mer,
+  bénitiers, herbiers, jeunes kelps —, gorgones, éponges et coraux mous sur
+  le tombant, **forêt de kelp géant** sur le flanc ouest et **kelp doré**
+  sur le flanc est, **cheminées hydrothermales** fumantes avec tapis
+  bactériens, essaims de crevettes, vers tubicoles et roche en fusion dans
+  la faille, crinoïdes, plumes de mer, éponges de verre et tuniciers sur la
+  plaine, **jardins de corail** sur les flancs, champs d'anémones
+  lumineuses. Plantes animées par `FloraAnimator.client.lua` : les pièces
+  isolées (herbiers, tentacules, panaches) oscillent sur leur base, les
+  modèles articulés (kelp, gorgones, crinoïdes, palmes) **plient
+  joint après joint** — une onde remonte chaque kelp —, le tout en un seul
+  `BulkMoveTo` près de la caméra. Poissons-clowns animés par
+  `ReefLife.client.lua` (ils tournent au-dessus de leur anémone et s'y
+  cachent quand un plongeur approche). Densité réglable : attribut
+  `DecorDensity` sur `Workspace` (0.25 à 1.5, 1 par défaut ; ~18 000
+  pièces de décor à 1, ~10 000 à 0.5) pour alléger sur mobile. Éclairage `Future` (réglé dans
+  `default.project.json`) pour les lumières des cristaux, fumeurs et
+  tuniciers. Faune : régions de créatures dans
   chaque biome (poissons et tortues au lagon, tortues et raies dans les
   jardins et le kelp, raies et requins en pleine eau, méduses sur la plaine
   abyssale et dans la faille), plus des **bancs de poissons d'ambiance**
@@ -371,8 +401,8 @@ retire pas, seul un remplissage `Air` creuse) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 266 vérifications
-luau tests/ui_test.lua         # 62 vérifications
+luau tests/world_test.lua      # 279 vérifications
+luau tests/ui_test.lua         # 71 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
@@ -398,12 +428,16 @@ luau tests/ui_test.lua         # 62 vérifications
   hub (pilotis jusqu'au sol, bateau à flot, rien dans les bâtiments), vie
   sur l'île sur la terre ferme, achats/équipement (prix, effets,
   vêtements, sauvegarde) ;
-  chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné ;
+  chaque courant ne traverse que de l'eau et jamais l'épave ; kelp enraciné
+  et articulé ; rochers du récif dans le sol, hors des entrées et du hub ;
+  coraux du lagon posés sur le fond (ni en l'air ni avalés par un rocher) ;
+  poissons-clowns sur leur anémone ; cristaux et stalactites des grottes ;
   15 trésors minimum par zone, aucun trésor ni créature dans la roche, les
   5 espèces présentes.
 - `ui_test` : lance le HUD, l'annonceur de zone et l'écran de mort avec un
   faux joueur local et les fait vivre une plongée (profondeur, entrée dans
-  un biome, oxygène bas, trésor, vente, boutique, animaux de l'île, mort,
+  un biome, oxygène bas, trésor, vente, boutique, animaux de l'île, flore
+  du récif qui ondule sans se disloquer, poisson-clown qui se cache, mort,
   réapparition) en vérifiant ce
   qu'ils affichent, accents compris (`UITheme.Upper`).
 

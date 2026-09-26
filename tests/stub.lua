@@ -428,6 +428,10 @@ local function service(class, name)
 end
 
 Workspace = service("Workspace", "Workspace")
+function Workspace:BulkMoveTo(parts, cframes)
+	assert(#parts == #cframes, "BulkMoveTo: parts and cframes differ")
+	for i, part in ipairs(parts) do part.CFrame = cframes[i] end
+end
 ReplicatedStorage = service("ReplicatedStorage", "ReplicatedStorage")
 ServerScriptService = service("ServerScriptService", "ServerScriptService")
 local PlayersService = service("Players", "Players")

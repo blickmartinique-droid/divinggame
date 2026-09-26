@@ -31,6 +31,12 @@
       "$properties": {
         "FallenPartsDestroyHeight": -1000
       }
+    },
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Technology": "Future"
+      }
     }
   }
 }

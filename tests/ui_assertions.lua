@@ -316,6 +316,66 @@ check("seagull circles high above", gullBody.Position.Y > 30 and math.abs(Vector
 check("seagull wings follow the body", (gullModel.WingLeft.Position - gullBody.Position).Magnitude < 1.6)
 check("dolphin swims round the lagoon", math.abs(Vector3.new(dolphinBody.Position.X, 0, dolphinBody.Position.Z).Magnitude - 150) < 1, dolphinBody.Position)
 
+section("Reef flora")
+local floraOk, floraErr = pcall(function()
+	local MarineFlora = require(ServerScriptService.World.Builders.MarineFlora)
+	local kit = MarineFlora.new(Random.new(7))
+	local garden = Instance.new("Folder")
+	garden.Name = "FloraTest"
+	garden.Parent = Workspace
+	local kelp = kit:Kelp(garden, Vector3.new(400, -120, 0), 40, Color3.fromRGB(78, 132, 58))
+	local fan = kit:SeaFan(garden, CFrame.new(404, -120, 0), 5, Color3.fromRGB(200, 60, 110))
+	local anemone, over = kit:Anemone(garden, Vector3.new(396, -120, 4), 1.2, Color3.fromRGB(200, 70, 90), Color3.fromRGB(255, 170, 200), false, 12)
+	local fish = kit:Clownfish(anemone, over, 0)
+	local stipes, holdfast = {}, nil
+	for _, p in ipairs(kelp:GetChildren()) do
+		if p.Name == "KelpStipe" then stipes[p:GetAttribute("Segment")] = p end
+		if p.Name == "Holdfast" then holdfast = p end
+	end
+	local restGaps = {}
+	for k = 2, #stipes do restGaps[k] = (stipes[k].Position - stipes[k - 1].Position).Magnitude end
+	local holdfastRest, topRest = holdfast.CFrame, stipes[#stipes].Position
+	local fanMesh, fanTrunk = fan.FanMesh, fan.FanTrunk
+	local fanGap, fanRest = (fanMesh.Position - fanTrunk.Position).Magnitude, fanMesh.Position
+	local tentacle = anemone.AnemoneTentacle
+	local tentacleRest = tentacle.Position
+	camera.CFrame = CFrame.new(400, -110, 20)
+	root.Position = Vector3.new(0, 5, 0)
+	CLOCK = 0
+	RUN_SCRIPT("StarterPlayer", "StarterPlayerScripts", "FloraAnimator")
+	frame(1.1)
+	CLOCK = 1.7
+	frame(0.05)
+	check("kelp holdfast stays rooted", holdfast.CFrame.Position == holdfastRest.Position)
+	check("kelp crown sways", (stipes[#stipes].Position - topRest).Magnitude > 0.2, (stipes[#stipes].Position - topRest).Magnitude)
+	local broken = 0
+	for k = 2, #stipes do
+		if math.abs((stipes[k].Position - stipes[k - 1].Position).Magnitude - restGaps[k]) > 0.05 then broken += 1 end
+	end
+	check("kelp stalk stays in one piece while it bends", broken == 0 and #stipes >= 4, broken)
+	check("sea fan sways as one piece", (fanMesh.Position - fanRest).Magnitude > 0.02 and math.abs((fanMesh.Position - fanTrunk.Position).Magnitude - fanGap) < 0.02)
+	check("anemone tentacles wave", (tentacle.Position - tentacleRest).Magnitude > 0.01)
+	RUN_SCRIPT("StarterPlayer", "StarterPlayerScripts", "ReefLife")
+	frame(1.1)
+	CLOCK = 3
+	frame(0.05)
+	local home = fish:GetAttribute("Home")
+	local away = (fish.PrimaryPart.Position - home).Magnitude
+	check("clownfish swims over its anemone", away > 0.3 and away < 2.5, away)
+	local tailGap = (fish.Tail.Position - fish.PrimaryPart.Position).Magnitude
+	check("clownfish tail stays on the body", tailGap < 0.8, tailGap)
+	root.Position = home + Vector3.new(2, 0, 0)
+	for step = 1, 90 do
+		CLOCK = 3 + step / 30
+		frame(1 / 30)
+	end
+	check("clownfish ducks into the anemone near a diver", fish.PrimaryPart.Position.Y < home.Y - 0.6, fish.PrimaryPart.Position.Y - home.Y)
+	root.Position = Vector3.new(0, 5, 0)
+	CLOCK = 0
+	garden:Destroy()
+end)
+check("reef flora animates", floraOk, floraErr)
+
 section("Current riders")
 local ridersOk, ridersErr = pcall(function()
 	local currentsFolder = Instance.new("Folder")
