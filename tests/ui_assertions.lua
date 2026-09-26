@@ -112,6 +112,7 @@ local function newCharacter(y)
 	humanoid.Health = 100
 	humanoid.Parent = character
 	player.Character = character
+	character.Parent = Workspace
 	return character, root, humanoid
 end
 local character, root, humanoid = newCharacter(5)
@@ -346,6 +347,46 @@ ridersOk, ridersErr = pcall(function()
 end)
 local after = riders:GetChildren()[1]:GetPivot().Position
 check("riders move along the current", ridersOk and (after - before).Magnitude > 5 and after.Z < before.Z + 1, ridersErr or tostring(after))
+
+section("Tides")
+local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
+local tideOk, tideErr = pcall(function()
+	local lane = Instance.new("Model")
+	lane.Name = "TideLane"
+	for key, value in pairs({ CurrentShape = "Path", CurrentMaxSpeed = 20, CurrentWidth = 12, CurrentAcceleration = 30, CurrentExitDeceleration = 30,
+		CurrentCentering = 0.3, CurrentCanBoost = true, CurrentTidePeriod = 240, CurrentTidePhase = 0, CurrentTier = "Strong" }) do
+		lane:SetAttribute(key, value)
+	end
+	for index, position in ipairs({ Vector3.new(300, -40, 0), Vector3.new(300, -40, -100) }) do
+		local point = Instance.new("Part")
+		point.Name = string.format("CurrentPoint_%03d", index)
+		point.Position = position
+		point.Parent = lane
+	end
+	lane.Parent = Workspace.Currents
+	root.Position = Vector3.new(300, -40, -50)
+	set(depth, 40)
+	RUN_SCRIPT("StarterPlayer", "StarterPlayerScripts", "UnderwaterCurrents")
+	CLOCK = 60
+	for _ = 1, 120 do frame() end
+end)
+check("tidal physics runs", tideOk, tideErr)
+local flood = CurrentField.GetVelocity()
+check("flood tide: the water runs the way the tube was built", flood.Z < -8, flood)
+tideOk, tideErr = pcall(function()
+	CLOCK = 180
+	for _ = 1, 180 do frame() end
+end)
+local ebb = CurrentField.GetVelocity()
+check("ebb tide: the same tube runs the other way", tideOk and ebb.Z > 8, tideErr or ebb)
+tideOk, tideErr = pcall(function()
+	CLOCK = 120
+	for _ = 1, 180 do frame() end
+end)
+local slack = CurrentField.GetVelocity()
+check("slack water: almost no flow", tideOk and slack.Magnitude < 3, tideErr or slack)
+check("tide labels", CurrentField.TideLabel(Workspace.Currents.TideLane) == "étale")
+CLOCK = 0
 
 section("Death")
 ok, err = pcall(function()

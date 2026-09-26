@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local CreatureBodies = require(ReplicatedStorage.Shared.Modules.CreatureBodies)
+local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 local GraphicsQuality = require(ReplicatedStorage.Shared.Modules.GraphicsQuality)
 
 local ACTIVE_RANGE = 320
@@ -74,6 +75,8 @@ local function addShoals(current: Instance)
 	local fishCount = FISH_BY_LEVEL[GraphicsQuality.GetLevel()] or 6
 	for k = 1, count do
 		local shoal = {
+			instance = current,
+			tidal = type(current:GetAttribute("CurrentTidePeriod")) == "number",
 			positions = positions,
 			lengths = lengths,
 			total = total,
@@ -116,20 +119,26 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 	local eye = camera.CFrame.Position
 	for _, shoal in ipairs(shoals) do
-		shoal.distance += shoal.speed * dt
+		-- A tidal current carries its riders one way, then the other.
+		local tide = shoal.tidal and CurrentField.TideFactor(shoal.instance) or 1
+		local sign = tide >= 0 and 1 or -1
+		shoal.distance += shoal.speed * dt * tide
 		if shoal.distance > shoal.total then
 			-- A loop goes round forever; a one-way current sends its riders
 			-- back to the start, out of sight, to ride again.
 			shoal.distance = shoal.closed and shoal.distance - shoal.total or 0
+		elseif shoal.distance < 0 then
+			shoal.distance = shoal.closed and shoal.distance + shoal.total or shoal.total
 		end
 		local head = sample(shoal.positions, shoal.lengths, shoal.distance)
 		if (head - eye).Magnitude < ACTIVE_RANGE then
 			for index, fish in ipairs(shoal.fish) do
-				local d = shoal.distance - index * 1.2
+				local d = shoal.distance - index * 1.2 * sign
 				if d < 0 then
 					d += shoal.closed and shoal.total or 0
 				end
-				local position, direction = sample(shoal.positions, shoal.lengths, math.max(d, 0))
+				local position, direction = sample(shoal.positions, shoal.lengths, math.clamp(d, 0, shoal.total))
+				direction *= sign
 				local side = direction:Cross(Vector3.new(0, 1, 0))
 				side = side.Magnitude > 0.1 and side.Unit or Vector3.new(1, 0, 0)
 				local up = side:Cross(direction).Unit

@@ -251,7 +251,8 @@ currentLabel.Size = UDim2.fromScale(1, 1)
 currentLabel.TextXAlignment = Enum.TextXAlignment.Center
 local function showCurrent(current: Instance)
 	local tier = TIER[current:GetAttribute("CurrentTier")] or TIER.Medium
-	currentLabel.Text = string.format("≈  %s  ·  %s", tostring(current:GetAttribute("CurrentDisplayName") or current.Name), UITheme.Upper(tier[1]))
+	local tide = CurrentField.TideLabel(current)
+	currentLabel.Text = string.format("≈  %s  ·  %s%s", tostring(current:GetAttribute("CurrentDisplayName") or current.Name), UITheme.Upper(tier[1]), tide and ("  ·  marée : " .. tide) or "")
 	currentLabel.TextColor3 = tier[2]
 	tween(currentChip, 0.35, { Position = UDim2.new(0.5, 0, 0, 22) })
 end

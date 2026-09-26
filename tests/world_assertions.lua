@@ -389,9 +389,10 @@ for _, current in ipairs(Workspace.Currents:GetChildren()) do
 	check(current.Name .. ": flows through water only", blocked == 0, blocked)
 	check(current.Name .. ": stays out of the wreck", inWreck == 0, inWreck)
 end
-for _, name in ipairs({ "EpaveUpdraft", "DescenteDuTombant", "CourantDesGrottes", "CourantDeLaFaille", "RecifFastLane",
-	"GrandCourant", "PlongeeDuPonton", "BretelleEpave", "BretelleImperatrice", "BretelleFaille", "RemonteeDesAbysses", "RemonteeImperatrice",
-	"ChuteDuPuits", "SouffleDesAbysses", "CourantDeLaForet", "CourantDeLEpave", "CourantDuKelpDore", "CourantDeLEperon", "TourbillonDuCoeur" }) do
+for _, name in ipairs({ "EpaveUpdraft", "CourantDeLaFaille", "ReefDrift", "EpaveVortex", "GrandCourant",
+	"RiviereBleue", "VeineFroide", "DeriveDesMantas", "PlongeonDuLarge", "CourantDeFond", "VeineChaude",
+	"RemonteeDuTombant", "CascadeDuTombant", "CourantDuLagon", "LaPasse", "PanacheDeLaFaille1", "GrandTourbillon", "RemousDeLEperon",
+	"MareePuitsDuLagon", "MareeTubeEperon", "MareeTubeEpave", "MareeTubeForet", "MareeTubeKelpDore", "MareeTubeAbysses", "TourbillonDuCoeur", "RespirationDeLEperon" }) do
 	check(name .. " placed", Workspace.Currents:FindFirstChild(name) ~= nil)
 end
 local function pathPoints(name)
@@ -404,11 +405,42 @@ local loopPoints = pathPoints("GrandCourant")
 local inner = math.huge
 for _, p in ipairs(loopPoints) do inner = math.min(inner, Vector3.new(p.Position.X, 0, p.Position.Z).Magnitude) end
 check("Grand Courant is a closed loop round the volcano", (loopPoints[1].Position - loopPoints[#loopPoints].Position).Magnitude < 1 and inner > 430 and #loopPoints > 100, inner)
-local rising = pathPoints("RemonteeDesAbysses")
-check("upwelling rises from the deep to the reef", rising[#rising].Position.Y - rising[1].Position.Y > 300, rising[#rising].Position.Y - rising[1].Position.Y)
-local ponton = pathPoints("PlongeeDuPonton")
-local hubAnchor = layout:GetAnchor("Hub")
-check("the dive current starts at the hub's platform", (Vector3.new(ponton[1].Position.X, 0, ponton[1].Position.Z) - Vector3.new(hubAnchor.dockEnd.X, 0, hubAnchor.dockEnd.Z)).Magnitude < 2 and ponton[1].Position.Y > -8)
+-- Not a taxi: no current (tides aside) starts or ends at a site.
+local sites = { layout:GetAnchor("WreckSite").position, layout:GetAnchor("Liner").center, layout:GetAnchor("Hub").dockEnd }
+for _, anchorName in ipairs({ "Caves", "Network" }) do
+	for _, entrance in ipairs(layout:GetAnchor(anchorName).entrances) do table.insert(sites, entrance.mouth) end
+end
+local taxis = {}
+local rising, sinking, undulating = 0, 0, 0
+for _, current in ipairs(Workspace.Currents:GetChildren()) do
+	if current:GetAttribute("CurrentShape") == "Path" and not current:GetAttribute("CurrentTidePeriod") then
+		local points = pathPoints(current.Name)
+		for _, site in ipairs(sites) do
+			for _, endPoint in ipairs({ points[1].Position, points[#points].Position }) do
+				if (endPoint - site).Magnitude < 70 then table.insert(taxis, current.Name) end
+			end
+		end
+		local net = points[#points].Position.Y - points[1].Position.Y
+		if net > 80 then rising += 1 elseif net < -80 then sinking += 1 end
+		local ups, downs = 0, 0
+		for i = 2, #points do
+			local dy = points[i].Position.Y - points[i - 1].Position.Y
+			if dy > 2 then ups += 1 elseif dy < -2 then downs += 1 end
+		end
+		if ups >= 3 and downs >= 3 then undulating += 1 end
+	end
+end
+check("no current is a taxi to a site", #taxis == 0, table.concat(taxis, ","))
+check("some currents rise", rising >= 3, rising)
+check("some currents sink", sinking >= 2, sinking)
+check("currents rise and dive along the way", undulating >= 5, undulating)
+local phases = {}
+for _, current in ipairs(Workspace.Currents:GetChildren()) do
+	if current:GetAttribute("CurrentTidePeriod") then phases[current:GetAttribute("CurrentTidePhase")] = true end
+end
+local phaseCount = 0
+for _ in pairs(phases) do phaseCount += 1 end
+check("the tunnels breathe with the tide, out of phase", phaseCount >= 6, phaseCount)
 local ribbons, segments = 0, 0
 for _, current in ipairs(Workspace.Currents:GetChildren()) do
 	local folder = current:FindFirstChild("PathSegments")
@@ -420,7 +452,7 @@ for _, current in ipairs(Workspace.Currents:GetChildren()) do
 	end
 end
 check("every path segment carries flow ribbons", ribbons == segments * 3, ribbons .. "/" .. segments * 3)
-check("entry beacons mark the network", #Workspace.Currents.Beacons:GetChildren() >= 14, #Workspace.Currents.Beacons:GetChildren())
+check("entry beacons mark the main currents", #Workspace.Currents.Beacons:GetChildren() >= 7, #Workspace.Currents.Beacons:GetChildren())
 
 section("Decor")
 local decorFloating = 0

@@ -30,6 +30,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 
 local CurrentsConfig = require(ReplicatedStorage.Shared.Config.CurrentsConfig)
+local Noise = require(script.Parent.Noise)
 
 local GENERATED_TAG = "GeneratedCurrent"
 local VISUAL_TAG = "CurrentVisual"
@@ -695,33 +696,6 @@ function Currents.Build(layout)
 		Tier = "Weak",
 	})
 
-	-- A fast lane circling the island along the top of the reef wall.
-	local tourPoints = {}
-	for index, bearing in ipairs({ 195, 230, 265, 300, 335 }) do
-		table.insert(tourPoints, aboveGround(onBearing(bearing, 290, -52 - index * 3), 22))
-	end
-	examplePath({
-		Name = "RecifFastLane",
-		DisplayName = "Tour du tombant",
-		Tier = "FastLane",
-		Width = 14,
-		Points = tourPoints,
-	})
-
-	-- The way down: from the reef crest, down the flank, to the terrace
-	-- where the wreck lies.
-	local descentPoints = {}
-	for _, step in ipairs({ { 62, 240, -45 }, { 62, 275, -115 }, { 60, 310, -185 }, { 58, 345, -245 }, { 57, 372, -285 } }) do
-		table.insert(descentPoints, aboveGround(onBearing(step[1], step[2], step[3]), 24))
-	end
-	examplePath({
-		Name = "DescenteDuTombant",
-		DisplayName = "Descente du tombant",
-		Tier = "Strong",
-		Width = 12,
-		Points = descentPoints,
-	})
-
 	-- The Épave vortex swirls in the open water just off the wreck's stern,
 	-- downslope (the anchor Shipwreck publishes from its real hull).
 	local vortexPosition = layout:GetAnchor("WreckVortex") or Vector3.new(420, -300, 300)
@@ -772,13 +746,13 @@ function Currents.Build(layout)
 	end
 
 	-- A strong flow along the floor of the abyssal rift.
-	local rift = layout:GetAnchor("RiftFrame")
-	if rift then
+	local riftFrame = layout:GetAnchor("RiftFrame")
+	if riftFrame then
 		exampleDirectional({
 			Name = "CourantDeLaFaille",
 			DisplayName = "Courant de la faille",
-			Position = rift.center + Vector3.new(0, 26, 0),
-			Direction = rift.along,
+			Position = riftFrame.center + Vector3.new(0, 26, 0),
+			Direction = riftFrame.along,
 			Length = 340,
 			Width = 36,
 			Height = 24,
@@ -786,32 +760,107 @@ function Currents.Build(layout)
 		})
 	end
 
-	-- The current network ------------------------------------------------------
-	-- A circulation that ties the whole map together, like the great ocean
-	-- currents: Le Grand Courant runs round the volcano at mid-depth; ramps
-	-- lead from it to every site (and one from the hub's diving platform
-	-- down onto it); upwellings carry divers back up from the deep; and
-	-- inside the volcano the water breathes through the lava tubes -- down
-	-- the lagoon shaft, up from the abyss, out to the kelp and the wreck.
 	local lift = function(clearance: number)
 		return function(point: Vector3): Vector3
 			return aboveGround(point, clearance)
 		end
 	end
 
-	-- Le Grand Courant: a closed loop, clockwise seen from above, swinging
-	-- wide round the Sirène's ledge (and over her masts' reach).
-	local LOOP_Y = -190
+	-- Ocean circulation ------------------------------------------------------------
+	-- The currents are a natural circulation, not a taxi service: none of
+	-- them runs from the island to a site. They wander through the water
+	-- following the relief -- rising over ridges, diving into hollows --,
+	-- well up along the seamount's flanks or plunge down them, boil up
+	-- above the rift's vents, turn in gyres and eddies, and in the tunnels
+	-- they breathe with the tide, flowing in, slackening, flowing out. A
+	-- diver uses them the way real divers do: to drift, to climb, to save
+	-- air -- and has to read where each one goes.
+
+	-- Veins: procedural meanders. From a start point, a heading that
+	-- wanders with noise; the height follows the seabed at a clearance that
+	-- breathes between two bounds (so the stream rises and dives), plus an
+	-- optional steady rise or fall; clear of every reserved volume (wrecks,
+	-- the beach, cave mouths): when blocked the vein turns aside.
+	local noise = Noise.new(layout.seed + 2718)
+	local OCEAN_LIMIT = 880
+	local function vein(spec)
+		local points = {}
+		local position = spec.start
+		local heading = math.rad(spec.heading)
+		local travelled, step = 0, spec.step or 26
+		local index = 0
+		while travelled < spec.length and index < 200 do
+			index += 1
+			table.insert(points, position)
+			heading += noise:Get(index * 0.11, spec.seed) * (spec.wander or 0.3)
+			-- Turn back in before the ocean's edge.
+			local flat = Vector3.new(position.X, 0, position.Z)
+			if flat.Magnitude > OCEAN_LIMIT - 60 then
+				local inward = math.atan2(-flat.Z, -flat.X)
+				local delta = ((inward - heading + math.pi) % (2 * math.pi)) - math.pi
+				heading += delta * 0.35
+			end
+			local nextPoint: Vector3? = nil
+			for _, turn in ipairs({ 0, 0.45, -0.45, 0.9, -0.9, 1.5, -1.5 }) do
+				local direction = Vector3.new(math.cos(heading + turn), 0, math.sin(heading + turn))
+				local ahead = position + direction * step
+				local ground = layout:GroundHeight(ahead.X, ahead.Z)
+				local breathe = 0.5 + 0.5 * noise:Get(index * 0.08, spec.seed + 7)
+				local target = ground + spec.clearance[1] + (spec.clearance[2] - spec.clearance[1]) * breathe + (spec.rise or 0) * index
+				target = math.clamp(target, spec.floor or -490, spec.ceiling or -14)
+				local y = position.Y + math.clamp(target - position.Y, -step * 0.85, step * 0.85)
+				y = math.min(math.max(y, ground + (spec.width or 12) + 2), spec.ceiling or -14)
+				local candidate = Vector3.new(ahead.X, y, ahead.Z)
+				if layout:IsFree(candidate, spec.width or 12) then
+					heading += turn
+					nextPoint = candidate
+					break
+				end
+			end
+			if not nextPoint then
+				break
+			end
+			travelled += (nextPoint - position).Magnitude
+			position = nextPoint
+		end
+		if #points >= 4 then
+			examplePath({
+				Name = spec.name,
+				DisplayName = spec.display,
+				Tier = spec.tier,
+				Width = spec.width or 12,
+				Points = points,
+				Smooth = 13,
+				Lift = lift(spec.width and spec.width * 0.6 or 8),
+				Riders = spec.riders or 1,
+				Beacon = spec.beacon,
+			})
+		else
+			warn(string.format("[Currents] vein %s found no way through", spec.name))
+		end
+	end
+
+	vein({ name = "RiviereBleue", display = "La Rivière bleue", tier = "Strong", seed = 1, start = onBearing(120, 640, -260), heading = 205, length = 1150, wander = 0.22, clearance = { 40, 150 }, width = 14, riders = 3,
+		beacon = { "LA RIVIÈRE BLEUE", "un courant qui serpente entre deux eaux" } })
+	vein({ name = "VeineFroide", display = "La Veine froide", tier = "Medium", seed = 2, start = onBearing(250, 720, -400), heading = 70, length = 800, wander = 0.3, clearance = { 20, 70 }, rise = 3.2, floor = -470, ceiling = -60, width = 12, riders = 2,
+		beacon = { "LA VEINE FROIDE", "↗ remonte des profondeurs" } })
+	vein({ name = "DeriveDesMantas", display = "La Dérive des mantas", tier = "Weak", seed = 3, start = onBearing(10, 540, -150), heading = 290, length = 900, wander = 0.35, clearance = { 60, 180 }, floor = -260, ceiling = -90, width = 18, riders = 2 })
+	vein({ name = "PlongeonDuLarge", display = "Le Plongeon du large", tier = "Strong", seed = 4, start = onBearing(205, 560, -80), heading = 150, length = 760, wander = 0.25, clearance = { 20, 60 }, rise = -3.4, floor = -470, ceiling = -60, width = 12, riders = 2,
+		beacon = { "LE PLONGEON DU LARGE", "↘ plonge vers le fond" } })
+	vein({ name = "CourantDeFond", display = "Le Courant de fond", tier = "Medium", seed = 5, start = onBearing(330, 830, -470), heading = 60, length = 900, wander = 0.28, clearance = { 10, 30 }, width = 12, riders = 2 })
+	vein({ name = "VeineChaude", display = "La Veine chaude", tier = "Medium", seed = 6, start = onBearing(292, 610, -420), heading = 180, length = 700, wander = 0.3, clearance = { 25, 80 }, rise = 6, floor = -470, ceiling = -120, width = 12, riders = 1,
+		beacon = { "LA VEINE CHAUDE", "↗ l'eau tiède de la faille remonte" } })
+
+	-- Le Grand Courant: the seamount's own slow gyre, clockwise, swinging
+	-- wide of the Sirène's ledge, and rising and dipping as it goes round.
 	local function loopRadius(bearing: number): number
 		local d = math.abs(((bearing - 35 + 180) % 360) - 180)
-		return 470 + 95 * math.clamp(1 - (d - 45) / 30, 0, 1)
-	end
-	local function loopPoint(bearing: number): Vector3
-		return onBearing(bearing, loopRadius(bearing), LOOP_Y)
+		return 470 + 95 * math.clamp(1 - (d - 45) / 30, 0, 1) + 25 * math.sin(math.rad(bearing) * 5)
 	end
 	local loop = {}
 	for bearing = 0, 360, 22.5 do
-		table.insert(loop, loopPoint(bearing % 360))
+		local b = bearing % 360
+		table.insert(loop, onBearing(b, loopRadius(b), -195 + 55 * math.sin(math.rad(bearing) * 3)))
 	end
 	examplePath({
 		Name = "GrandCourant",
@@ -822,110 +871,104 @@ function Currents.Build(layout)
 		Smooth = 24,
 		Lift = lift(20),
 		Riders = 6,
-		Beacon = { "LE GRAND COURANT", "↻ Le tour du volcan" },
+		Beacon = { "LE GRAND COURANT", "↻ le tourbillon du volcan" },
 	})
 
-	-- From the hub's diving platform straight down onto the loop.
-	local hub = layout:GetAnchor("Hub")
-	if hub then
-		local b = math.deg(math.atan2(hub.dockEnd.Z, hub.dockEnd.X))
-		examplePath({
-			Name = "PlongeeDuPonton",
-			DisplayName = "Plongée du ponton",
-			Tier = "Strong",
-			Width = 12,
-			Points = { hub.dockEnd + Vector3.new(0, -5, 0), onBearing(b, 205, -30), onBearing(b, 265, -80), onBearing(b, 340, -140), onBearing(b, 420, -178), loopPoint(b + 8) },
-			Smooth = 20,
-			Lift = lift(18),
-			Riders = 2,
-			Beacon = { "PLONGÉE DU PONTON", "↓ vers Le Grand Courant" },
-		})
-	end
+	-- Along the reef wall: water climbing it on the west side, spilling
+	-- down it on the east -- the seamount deflecting the flow.
+	examplePath({
+		Name = "RemonteeDuTombant",
+		DisplayName = "Remontée du tombant",
+		Tier = "Medium",
+		Width = 12,
+		Points = { onBearing(240, 330, -230), onBearing(247, 300, -170), onBearing(252, 272, -110), onBearing(258, 252, -60), onBearing(262, 262, -28) },
+		Smooth = 12,
+		Lift = lift(12),
+		Riders = 1,
+	})
+	examplePath({
+		Name = "CascadeDuTombant",
+		DisplayName = "Cascade du tombant",
+		Tier = "Strong",
+		Width = 12,
+		Points = { onBearing(128, 250, -26), onBearing(124, 262, -70), onBearing(120, 285, -130), onBearing(116, 318, -190), onBearing(112, 360, -240) },
+		Smooth = 12,
+		Lift = lift(12),
+		Riders = 1,
+	})
 
-	-- Ramps off the loop to the sites.
-	local ramps = {
-		{ name = "BretelleEpave", display = "Bretelle → La Sirène Noire", points = { loopPoint(58), onBearing(47, 530, -250), onBearing(38, 498, -292) }, beacon = "→ Cimetière de la Sirène" },
-		{ name = "BretelleImperatrice", display = "Bretelle → L'Impératrice", points = { loopPoint(66), onBearing(55, 630, -320), onBearing(46, 675, -400), onBearing(43, 690, -440) }, beacon = "→ L'Impératrice" },
-		{ name = "BretelleFaille", display = "Bretelle → Faille abyssale", points = { loopPoint(292), onBearing(298, 560, -320), onBearing(300, 630, -410) }, beacon = "→ Faille abyssale" },
-	}
-	local caves = layout:GetAnchor("Caves")
-	if caves then
-		for _, entrance in ipairs(caves.entrances) do
-			if entrance.id == "Porche" then
-				local b = math.deg(math.atan2(entrance.mouth.Z, entrance.mouth.X))
-				table.insert(ramps, { name = "CourantDesGrottes", display = "Courant des grottes", points = { loopPoint(b + 12), onBearing(b + 4, 380, -135), entrance.mouth - entrance.inward * 40 + Vector3.new(0, 2, 0), entrance.mouth + entrance.inward * 2 }, beacon = "→ Grottes de l'Éperon" })
-			end
-		end
+	-- The lagoon turns gently round the island, and empties through La
+	-- Passe, a gap in the reef crest, as a rip current down the outside.
+	local lagoon = {}
+	for bearing = 0, 360, 30 do
+		table.insert(lagoon, onBearing((bearing + 90) % 360, 108 + 8 * math.sin(math.rad(bearing) * 3), -3))
 	end
-	for _, ramp in ipairs(ramps) do
-		examplePath({
-			Name = ramp.name,
-			DisplayName = ramp.display,
-			Tier = "Strong",
-			Width = 11,
-			Points = ramp.points,
-			Smooth = 20,
-			Lift = lift(14),
-			Riders = 1,
-			Beacon = { "BRETELLE", ramp.beacon },
-		})
-	end
+	examplePath({ Name = "CourantDuLagon", DisplayName = "Courant du lagon", Tier = "Weak", Width = 6, Points = lagoon, Smooth = 14, Riders = 2 })
+	examplePath({
+		Name = "LaPasse",
+		DisplayName = "La Passe",
+		Tier = "Medium",
+		Width = 8,
+		Points = { onBearing(62, 128, -3), onBearing(62, 168, -8), onBearing(64, 205, -24), onBearing(66, 240, -55), onBearing(68, 270, -80) },
+		Smooth = 12,
+		Lift = lift(3),
+		Riders = 1,
+		Beacon = { "LA PASSE", "le lagon se vide vers le large" },
+	})
 
-	-- Upwellings: the quick, safe way home from the deep, rising along the
-	-- flank to just under the reef crest.
-	for _, rise in ipairs({ { "RemonteeDesAbysses", "Remontée des abysses", 300, 600, -430 }, { "RemonteeImperatrice", "Remontée de l'Impératrice", 78, 640, -440 } }) do
-		local b = rise[3]
-		examplePath({
-			Name = rise[1],
-			DisplayName = rise[2],
-			Tier = "Strong",
-			Width = 12,
-			Points = { onBearing(b, rise[4], rise[5]), onBearing(b, rise[4] - 110, -340), onBearing(b, 400, -240), onBearing(b, 310, -140), onBearing(b, 245, -40) },
-			Smooth = 20,
-			Lift = lift(22),
-			Riders = 1,
-			Beacon = { "REMONTÉE", "↑ vers le récif" },
-		})
-	end
-
-	-- The volcano breathing through its lava tubes (see LavaTubes).
-	local network = layout:GetAnchor("Network")
-	if network then
-		local function tubePath(id: string, inward: boolean, name: string, display: string, tier: string, beacon: string)
-			local tube = network.tubes[id]
-			if not tube then
-				return
-			end
-			local points = {}
-			for i = 1, #tube.samples, 5 do
-				table.insert(points, tube.samples[i])
-			end
-			if points[#points] ~= tube.samples[#tube.samples] then
-				table.insert(points, tube.samples[#tube.samples])
-			end
-			if inward then
-				local reversed = {}
-				for i = #points, 1, -1 do
-					table.insert(reversed, points[i])
-				end
-				points = reversed
-			end
-			examplePath({
-				Name = name,
-				DisplayName = display,
-				Tier = tier,
-				Width = math.max(tube.spec.radius - 3, 6),
-				Points = points,
-				Riders = 1,
-				Beacon = { "RÉSEAU DU VOLCAN", beacon },
+	-- Plumes: hot water boiling up from the rift's floor.
+	local rift = layout:GetAnchor("RiftFrame")
+	if rift then
+		for k, offset in ipairs({ -150, -40, 90 }) do
+			local base = rift.center + rift.along * offset
+			local floorY = layout:GroundHeight(base.X, base.Z)
+			exampleDirectional({
+				Name = "PanacheDeLaFaille" .. k,
+				DisplayName = "Panache hydrothermal",
+				Position = Vector3.new(base.X, floorY + 70, base.Z),
+				Direction = Vector3.new(0, 1, 0),
+				Length = 120,
+				Width = 22,
+				Height = 22,
+				Tier = "Medium",
 			})
 		end
-		tubePath("PuitsDuLagon", true, "ChuteDuPuits", "Chute du Puits", "Strong", "↓ vers le Cœur du volcan")
-		tubePath("TubeAbysses", true, "SouffleDesAbysses", "Souffle des abysses", "FastLane", "↑ vers le Cœur du volcan")
-		tubePath("TubeForet", false, "CourantDeLaForet", "Courant de la forêt", "Strong", "→ Forêt de kelp")
-		tubePath("TubeEpave", false, "CourantDeLEpave", "Courant de l'épave", "Strong", "→ Cimetière de la Sirène")
-		tubePath("TubeKelpDore", true, "CourantDuKelpDore", "Courant du kelp doré", "Medium", "→ Cœur du volcan")
-		tubePath("TubeEperon", false, "CourantDeLEperon", "Courant de l'Éperon", "Medium", "→ Salle des Cristaux")
+	end
+
+	-- Gyres and eddies.
+	exampleCircular({ Name = "GrandTourbillon", DisplayName = "Le Grand Tourbillon", Position = aboveGround(onBearing(175, 800, -380), 40), Radius = 120, Spin = 1, Tier = "Weak" })
+	exampleCircular({ Name = "RemousDeLEperon", DisplayName = "Remous de l'Éperon", Position = aboveGround(onBearing(140, 560, -210), 25), Radius = 50, Spin = -1, Tier = "Medium" })
+
+	-- Tides: in the volcano's tubes and at the caves' Porche the water
+	-- breathes, flowing in for a few minutes, slackening, then flowing out.
+	-- Neighbouring tubes are out of phase, so the volcano always has water
+	-- moving somewhere.
+	local function tidal(name: string, display: string, points: { Vector3 }, width: number, tier: string, phase: number, beacon)
+		local model = examplePath({ Name = name, DisplayName = display, Tier = tier, Width = width, Points = points, Riders = 1, Beacon = beacon })
+		model:SetAttribute("CurrentTidePeriod", 240)
+		model:SetAttribute("CurrentTidePhase", phase)
+	end
+	local network = layout:GetAnchor("Network")
+	if network then
+		local order = { "PuitsDuLagon", "TubeEperon", "TubeEpave", "TubeForet", "TubeKelpDore", "TubeAbysses" }
+		local names = {
+			PuitsDuLagon = "Marée du Puits", TubeEperon = "Marée de l'Éperon", TubeEpave = "Marée de l'épave",
+			TubeForet = "Marée de la forêt", TubeKelpDore = "Marée du kelp doré", TubeAbysses = "Souffle des abysses",
+		}
+		for index, id in ipairs(order) do
+			local tube = network.tubes[id]
+			if tube then
+				local points = {}
+				for i = 1, #tube.samples, 5 do
+					table.insert(points, tube.samples[i])
+				end
+				if points[#points] ~= tube.samples[#tube.samples] then
+					table.insert(points, tube.samples[#tube.samples])
+				end
+				tidal("Maree" .. id, names[id], points, math.max(tube.spec.radius - 3, 6), id == "TubeAbysses" and "FastLane" or "Strong", index * math.pi / 3,
+					index == 1 and { "RÉSEAU DU VOLCAN", "⇄ la marée entre et sort" } or nil)
+			end
+		end
 		exampleCircular({
 			Name = "TourbillonDuCoeur",
 			DisplayName = "Tourbillon du Cœur",
@@ -934,6 +977,19 @@ function Currents.Build(layout)
 			Spin = -1,
 			Tier = "Weak",
 		})
+	end
+	local caves = layout:GetAnchor("Caves")
+	if caves then
+		for _, entrance in ipairs(caves.entrances) do
+			if entrance.id == "Porche" then
+				tidal("RespirationDeLEperon", "Respiration de l'Éperon", {
+					aboveGround(entrance.mouth - entrance.inward * 70 + Vector3.new(0, 4, 0), 12),
+					aboveGround(entrance.mouth - entrance.inward * 30 + Vector3.new(0, 2, 0), 10),
+					entrance.mouth + entrance.inward * 2,
+					entrance.mouth + entrance.inward * 30,
+				}, 10, "Medium", 0.5)
+			end
+		end
 	end
 
 	-- Decorate everything, hand-placed and generated alike (every visual is

@@ -350,6 +350,7 @@ function Inst:IsDescendantOf(ancestor)
 	return false
 end
 function Inst:Emit() end
+function Inst:Fire(...) self.Event:Fire(...) end
 function Inst:FireClient() end
 function Inst:FireAllClients() end
 function Inst:Play() end

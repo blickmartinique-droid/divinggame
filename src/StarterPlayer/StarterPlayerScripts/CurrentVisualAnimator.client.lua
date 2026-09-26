@@ -13,6 +13,9 @@
 
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local CurrentField = require(ReplicatedStorage.Shared.Modules.CurrentField)
 
 local UPDATE_INTERVAL = 1 / 20
 local CULL_REFRESH_INTERVAL = 1
@@ -165,6 +168,25 @@ local function buildVisual(instance: Instance)
 		return nil
 	end
 	collectEmitters(ringsFolder, visual.emitters)
+	-- Tidal currents: their ribbons and flow particles turn round with the
+	-- water (see CurrentField.TideFactor).
+	if type(instance:GetAttribute("CurrentTidePeriod")) == "number" then
+		visual.instance = instance
+		visual.tidal = true
+		visual.sign = 1
+		visual.beams = {}
+		visual.flowEmitters = {}
+		local segments = instance:FindFirstChild("PathSegments")
+		if segments then
+			for _, descendant in ipairs(segments:GetDescendants()) do
+				if descendant:IsA("Beam") then
+					table.insert(visual.beams, { beam = descendant, speed = descendant.TextureSpeed })
+				elseif descendant:IsA("ParticleEmitter") and descendant.Name ~= "CurrentEntryVeil" and descendant.Name ~= "CurrentExitVeil" then
+					table.insert(visual.flowEmitters, descendant)
+				end
+			end
+		end
+	end
 	return visual
 end
 
@@ -292,7 +314,18 @@ RunService.Heartbeat:Connect(function(deltaTime)
 				stepStrand(visual, strand, dt)
 			end
 		elseif visual.track then
-			stepTrack(visual.track, dt)
+			local tide = visual.tidal and CurrentField.TideFactor(visual.instance) or 1
+			local sign = tide >= 0 and 1 or -1
+			if visual.tidal and sign ~= visual.sign then
+				visual.sign = sign
+				for _, entry in ipairs(visual.beams) do
+					entry.beam.TextureSpeed = entry.speed * sign
+				end
+				for _, emitter in ipairs(visual.flowEmitters) do
+					emitter.EmissionDirection = sign > 0 and Enum.NormalId.Front or Enum.NormalId.Back
+				end
+			end
+			stepTrack(visual.track, dt * tide)
 		end
 	end
 end)

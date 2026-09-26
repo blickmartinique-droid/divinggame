@@ -107,6 +107,7 @@ local function readCurrent(instance: Instance)
 		spin = instance:GetAttribute("CurrentSpin") or 1,
 		spiralBias = instance:GetAttribute("CurrentSpiralBias") or 0,
 		width = instance:GetAttribute("CurrentWidth") or 12,
+		tidal = type(instance:GetAttribute("CurrentTidePeriod")) == "number",
 		center = Vector3.new(),
 		boundingRadius = 0,
 		segments = nil,
@@ -211,7 +212,7 @@ local function directionalInfluence(data, playerPosition)
 		return nil, nil
 	end
 
-	local direction = part.CFrame.LookVector
+	local direction = part.CFrame.LookVector * (data.tideSign or 1)
 	local offsetFraction = math.clamp(math.sqrt((localPoint.X / halfWidth) ^ 2 + (localPoint.Y / halfHeight) ^ 2), 0, 1)
 	if data.centering > 0 and offsetFraction > 0.01 then
 		local pull = -(part.CFrame.RightVector * localPoint.X + part.CFrame.UpVector * localPoint.Y)
@@ -239,7 +240,7 @@ local function circularInfluence(data, playerPosition)
 	end
 
 	local radial = flat.Unit
-	local tangent = Vector3.new(-radial.Z, 0, radial.X) * data.spin
+	local tangent = Vector3.new(-radial.Z, 0, radial.X) * data.spin * (data.tideSign or 1)
 	local direction = tangent - radial * data.spiralBias
 	if direction.Magnitude > 0.01 then
 		direction = direction.Unit
@@ -275,7 +276,7 @@ local function pathInfluence(data, playerPosition)
 		tangent = segments[bestIndex].dir
 	end
 
-	local direction = tangent.Unit
+	local direction = tangent.Unit * (data.tideSign or 1)
 	if data.centering > 0 and bestDistance > 0.01 then
 		local pull = (bestPoint - playerPosition).Unit
 		direction = steerTowardCenter(direction, pull, data.centering, bestDistance / data.width, data.maxSpeed)
@@ -292,6 +293,9 @@ local function computeCurrentVelocity(playerPosition)
 
 	for _, data in pairs(currents) do
 		if data.enabled and (playerPosition - data.center).Magnitude <= data.boundingRadius then
+			-- The tide sets which way the water goes and how hard.
+			local tide = data.tidal and CurrentField.TideFactor(data.instance) or 1
+			data.tideSign = tide >= 0 and 1 or -1
 			local direction, falloff
 			if data.shape == "Directional" then
 				direction, falloff = directionalInfluence(data, playerPosition)
@@ -301,6 +305,9 @@ local function computeCurrentVelocity(playerPosition)
 				direction, falloff = pathInfluence(data, playerPosition)
 			end
 
+			if direction and falloff and data.tidal then
+				falloff *= math.abs(tide)
+			end
 			if direction and falloff and falloff > 0 then
 				local maxSpeed = data.maxSpeed
 				if not data.canBoost then
@@ -354,14 +361,26 @@ local function onCharacterAdded(character)
 			exitDeceleration = dominant.exitDeceleration
 		end
 
-		if targetSpeed > 0.01 then
-			local alpha = 1 - math.exp(-deltaTime / CurrentsConfig.DirectionResponseTime)
-			local blended = appliedDirection + (targetVelocity / targetSpeed - appliedDirection) * alpha
-			appliedDirection = blended.Magnitude > 0.01 and blended.Unit or targetVelocity / targetSpeed
-		end
+		-- A flow that turns right round (the tide in a tunnel, the far side
+		-- of an eddy) cannot be blended toward: the push first dies down,
+		-- then builds up again the other way.
+		local opposing = targetSpeed > 0.01 and appliedDirection:Dot(targetVelocity / targetSpeed) < -0.2
+		if opposing and appliedSpeed > 0.5 then
+			appliedSpeed = moveToward(appliedSpeed, 0, exitDeceleration * deltaTime)
+		else
+			if targetSpeed > 0.01 then
+				if opposing then
+					appliedDirection = targetVelocity / targetSpeed
+				else
+					local alpha = 1 - math.exp(-deltaTime / CurrentsConfig.DirectionResponseTime)
+					local blended = appliedDirection + (targetVelocity / targetSpeed - appliedDirection) * alpha
+					appliedDirection = blended.Magnitude > 0.01 and blended.Unit or targetVelocity / targetSpeed
+				end
+			end
 
-		local rate = targetSpeed > appliedSpeed and acceleration or exitDeceleration
-		appliedSpeed = moveToward(appliedSpeed, targetSpeed, rate * deltaTime)
+			local rate = targetSpeed > appliedSpeed and acceleration or exitDeceleration
+			appliedSpeed = moveToward(appliedSpeed, targetSpeed, rate * deltaTime)
+		end
 
 		local velocity = appliedDirection * appliedSpeed
 		if velocity.Y > 0 and rootPart.Position.Y > DepthUtils.SURFACE_Y - SURFACE_GUARD then

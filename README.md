@@ -136,15 +136,24 @@ et fonctions pures réutilisées par le client et le serveur, ex. `DepthUtils`,
   (trois bandes scintillantes qui s'enroulent autour de l'axe, texture qui
   défile à la vitesse du courant), avec une **balise lumineuse** et un
   panneau à chaque entrée ; `CurrentRiders.client.lua` fait voyager des
-  **bancs de poissons** dans les courants. **Le réseau de courants** :
-  **Le Grand Courant** (voie rapide en boucle autour du volcan, à ~190 m),
-  la **Plongée du ponton** qui part de la plateforme du hub et y descend,
-  des **bretelles** vers la Sirène Noire, L'Impératrice, la Faille et les
-  grottes, des **remontées** des abysses et de L'Impératrice jusqu'au
-  récif, et la **respiration du volcan** dans les tunnels de lave (chute du
-  Puits vers le Cœur, souffle des abysses qui remonte en voie rapide,
-  courants vers la forêt, l'épave, le kelp doré et l'Éperon, tourbillon
-  dans le Cœur) ;
+  **bancs de poissons** dans les courants. **Une circulation naturelle,
+  pas des taxis** (aucun courant ne mène de l'île à un site) : six
+  **veines** générées (`vein` : un cap qui serpente au bruit, une hauteur
+  qui suit le relief à une distance qui « respire », qui monte et plonge,
+  qui contourne épaves et entrées) — la **Rivière bleue** entre deux eaux,
+  la **Veine froide** qui remonte des profondeurs, la **Dérive des
+  mantas**, le **Plongeon du large** qui descend vers le fond, le
+  **Courant de fond** au ras de la plaine, la **Veine chaude** qui monte de
+  la faille ; **Le Grand Courant**, le tourbillon du volcan, qui ondule
+  entre 140 et 250 m ; la **Remontée** et la **Cascade du tombant** le long
+  de la falaise ; le **Courant du lagon** et **La Passe** qui vide le
+  lagon vers le large ; des **panaches hydrothermaux** qui montent de la
+  faille ; le **Grand Tourbillon** et le **Remous de l'Éperon** ; et des
+  **marées** dans les tunnels du volcan et au Porche (`CurrentTidePeriod`) :
+  l'eau entre (flot), ralentit (étale), puis ressort (jusant), sur une
+  horloge commune à tous les joueurs, tunnels déphasés entre eux — la
+  physique, les rubans, les anneaux, les poissons et le HUD suivent la
+  marée ;
   `CurrentFeedback.client.lua` gère le léger élargissement du FOV, les traits de
   vitesse et le son optionnel.
 - **Créatures** — `CreaturesConfig.lua` (espèces : profondeur, rareté,
@@ -362,8 +371,8 @@ retire pas, seul un remplissage `Air` creuse) et les
 ```sh
 python3 tests/build_tests.py
 luau tests/creature_test.lua   # 126 vérifications
-luau tests/world_test.lua      # 242 vérifications
-luau tests/ui_test.lua         # 57 vérifications
+luau tests/world_test.lua      # 266 vérifications
+luau tests/ui_test.lua         # 62 vérifications
 ```
 
 - `creature_test` : cohérence de `CreaturesConfig`, machine à états du
@@ -382,7 +391,9 @@ luau tests/ui_test.lua         # 57 vérifications
   puits du lagon sans eau au-dessus de la mer, tunnel relié aux Cristaux,
   temple posé au sol, arches, balises) ; réseau de courants (boucle fermée
   autour du volcan, remontées qui montent, départ au ponton, rubans et
-  balises) ; paquebot (taille, quille dans la
+  balises ; aucun courant-taxi vers un site, des courants qui montent,
+  d'autres qui descendent, des veines qui ondulent, des marées déphasées) ;
+  paquebot (taille, quille dans la
   vase, ouvertures, rien ne le traverse) ; biomes nommés aux bons endroits ;
   hub (pilotis jusqu'au sol, bateau à flot, rien dans les bâtiments), vie
   sur l'île sur la terre ferme, achats/équipement (prix, effets,

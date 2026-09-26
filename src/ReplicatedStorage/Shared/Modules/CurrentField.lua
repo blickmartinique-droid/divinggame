@@ -29,6 +29,43 @@ CurrentField.Entered = enteredEvent.Event
 CurrentField.Exited = exitedEvent.Event
 CurrentField.Changed = changedEvent.Event
 
+-- Tides: a current with a CurrentTidePeriod (seconds) reverses with the
+-- tide, on a clock shared by every client (the server's time), so all
+-- divers see the same water. Returns a signed factor: its sign is the
+-- flow's direction (1 = as built, -1 = reversed), its size how strong the
+-- flow is right now (0 at slack water, 1 at full flow). 1 for a current
+-- without tides.
+local function sharedTime(): number
+	local ok, now = pcall(function()
+		return workspace:GetServerTimeNow()
+	end)
+	return ok and now or os.clock()
+end
+
+function CurrentField.TideFactor(instance: Instance): number
+	local period = instance:GetAttribute("CurrentTidePeriod")
+	if type(period) ~= "number" or period <= 0 then
+		return 1
+	end
+	local phase = instance:GetAttribute("CurrentTidePhase") or 0
+	local wave = math.sin(sharedTime() / period * math.pi * 2 + phase)
+	local strength = math.min(1, math.abs(wave) * 1.6)
+	return wave >= 0 and strength or -strength
+end
+
+-- "Flot" (flowing in, as built) or "Jusant" (flowing out), for the HUD.
+function CurrentField.TideLabel(instance: Instance): string?
+	local period = instance:GetAttribute("CurrentTidePeriod")
+	if type(period) ~= "number" or period <= 0 then
+		return nil
+	end
+	local factor = CurrentField.TideFactor(instance)
+	if math.abs(factor) < 0.2 then
+		return "étale"
+	end
+	return factor > 0 and "flot" or "jusant"
+end
+
 function CurrentField.SetVelocity(newVelocity: Vector3)
 	velocity = newVelocity
 end
